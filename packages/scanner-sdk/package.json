@@ -1,0 +1,29 @@
+{
+  "name": "@sentinelx/scanner-sdk",
+  "version": "1.0.0",
+  "private": true,
+  "description": "SentinelX AI — Scanner Plugin SDK and base scanner implementations",
+  "main": "dist/index.js",
+  "types": "dist/index.d.ts",
+  "scripts": {
+    "build": "tsc",
+    "typecheck": "tsc --noEmit",
+    "lint": "eslint src --ext .ts",
+    "clean": "rm -rf dist"
+  },
+  "dependencies": {
+    "@sentinelx/shared": "workspace:*",
+    "xml2js": "^0.6.2",
+    "fast-xml-parser": "^4.3.6",
+    "csv-parse": "^5.5.6",
+    "js-yaml": "^4.1.0",
+    "semver": "^7.6.2"
+  },
+  "devDependencies": {
+    "@types/js-yaml": "^4.0.9",
+    "@types/node": "^20.14.0",
+    "@types/semver": "^7.5.8",
+    "@types/xml2js": "^0.4.14",
+    "typescript": "^5.5.2"
+  }
+}

@@ -1,0 +1,261 @@
+# SentinelX AI — Helm Chart Default Values
+# Override with values/staging.yaml or values/production.yaml
+
+global:
+  imageRegistry: ghcr.io
+  imagePullSecrets: []
+  storageClass: ""
+
+environment: production
+
+# ─── Image Configuration ──────────────────────────────────────
+image:
+  registry: ghcr.io
+  apiGateway:
+    repository: sentinelx/sentinelx-api-gateway
+    tag: latest
+    pullPolicy: IfNotPresent
+  web:
+    repository: sentinelx/sentinelx-web
+    tag: latest
+    pullPolicy: IfNotPresent
+
+# ─── Replica Counts ───────────────────────────────────────────
+replicaCount:
+  api: 2
+  web: 2
+
+# ─── Service Configuration ────────────────────────────────────
+service:
+  api:
+    type: ClusterIP
+    port: 3001
+  web:
+    type: ClusterIP
+    port: 3000
+
+# ─── Ingress ──────────────────────────────────────────────────
+ingress:
+  enabled: true
+  className: nginx
+  annotations:
+    cert-manager.io/cluster-issuer: letsencrypt-prod
+    nginx.ingress.kubernetes.io/proxy-body-size: "100m"
+    nginx.ingress.kubernetes.io/proxy-read-timeout: "300"
+    nginx.ingress.kubernetes.io/proxy-send-timeout: "300"
+    nginx.ingress.kubernetes.io/enable-cors: "true"
+    nginx.ingress.kubernetes.io/cors-allow-origin: "https://app.sentinelx.io"
+  hosts:
+    - host: app.sentinelx.io
+      paths:
+        - path: /
+          pathType: Prefix
+          service: web
+    - host: api.sentinelx.io
+      paths:
+        - path: /
+          pathType: Prefix
+          service: api
+  tls:
+    - secretName: sentinelx-tls
+      hosts:
+        - app.sentinelx.io
+        - api.sentinelx.io
+
+# ─── Resources ────────────────────────────────────────────────
+resources:
+  api:
+    requests:
+      cpu: 500m
+      memory: 512Mi
+    limits:
+      cpu: 2000m
+      memory: 2Gi
+  web:
+    requests:
+      cpu: 250m
+      memory: 256Mi
+    limits:
+      cpu: 1000m
+      memory: 1Gi
+
+# ─── Autoscaling ─────────────────────────────────────────────
+autoscaling:
+  enabled: true
+  api:
+    minReplicas: 2
+    maxReplicas: 20
+    targetCPUUtilizationPercentage: 70
+    targetMemoryUtilizationPercentage: 80
+  web:
+    minReplicas: 2
+    maxReplicas: 10
+    targetCPUUtilizationPercentage: 70
+
+# ─── Pod Disruption Budget ────────────────────────────────────
+podDisruptionBudget:
+  enabled: true
+  api:
+    minAvailable: 1
+  web:
+    minAvailable: 1
+
+# ─── Health Checks ───────────────────────────────────────────
+livenessProbe:
+  api:
+    httpGet:
+      path: /health/live
+      port: 3001
+    initialDelaySeconds: 30
+    periodSeconds: 30
+    timeoutSeconds: 10
+    failureThreshold: 3
+  web:
+    httpGet:
+      path: /
+      port: 3000
+    initialDelaySeconds: 20
+    periodSeconds: 30
+    failureThreshold: 3
+
+readinessProbe:
+  api:
+    httpGet:
+      path: /health/ready
+      port: 3001
+    initialDelaySeconds: 15
+    periodSeconds: 10
+    timeoutSeconds: 5
+    failureThreshold: 3
+  web:
+    httpGet:
+      path: /
+      port: 3000
+    initialDelaySeconds: 10
+    periodSeconds: 10
+
+# ─── Secrets ─────────────────────────────────────────────────
+secrets:
+  existingSecret: "sentinelx-secrets"
+  # Keys expected in the secret:
+  # DATABASE_URL, REDIS_URL, JWT_SECRET, JWT_REFRESH_SECRET,
+  # ENCRYPTION_KEY, COOKIE_SECRET, OPENAI_API_KEY,
+  # ANTHROPIC_API_KEY, STRIPE_SECRET_KEY, SMTP_PASS, etc.
+
+# ─── Environment Variables (non-secret) ──────────────────────
+env:
+  api:
+    NODE_ENV: production
+    PORT: "3001"
+    ALLOWED_ORIGINS: "https://app.sentinelx.io"
+    FRONTEND_URL: "https://app.sentinelx.io"
+    MINIO_USE_SSL: "true"
+  web:
+    NEXT_TELEMETRY_DISABLED: "1"
+    NODE_ENV: production
+
+# ─── PostgreSQL (managed externally by default) ───────────────
+postgresql:
+  enabled: false
+  # Use external managed PostgreSQL (RDS, CloudSQL, etc.)
+  external:
+    host: ""
+    port: 5432
+    database: sentinelx
+    existingSecret: sentinelx-postgres-secret
+    secretKeys:
+      url: DATABASE_URL
+
+# ─── Redis (managed externally by default) ────────────────────
+redis:
+  enabled: false
+  external:
+    host: ""
+    port: 6379
+    existingSecret: sentinelx-redis-secret
+    secretKeys:
+      url: REDIS_URL
+
+# ─── RabbitMQ ────────────────────────────────────────────────
+rabbitmq:
+  enabled: true
+  auth:
+    username: sentinelx
+    existingPasswordSecret: sentinelx-rabbitmq-secret
+  replicaCount: 3
+  clustering:
+    enabled: true
+  resources:
+    requests:
+      cpu: 250m
+      memory: 512Mi
+    limits:
+      cpu: 1000m
+      memory: 2Gi
+
+# ─── MinIO (Object Storage) ───────────────────────────────────
+minio:
+  enabled: true
+  mode: distributed
+  replicas: 4
+  existingSecret: sentinelx-minio-secret
+
+# ─── Service Account ─────────────────────────────────────────
+serviceAccount:
+  create: true
+  annotations: {}
+  name: sentinelx
+
+# ─── Pod Security Context ─────────────────────────────────────
+podSecurityContext:
+  runAsNonRoot: true
+  runAsUser: 1001
+  fsGroup: 1001
+  seccompProfile:
+    type: RuntimeDefault
+
+securityContext:
+  allowPrivilegeEscalation: false
+  readOnlyRootFilesystem: true
+  capabilities:
+    drop:
+      - ALL
+
+# ─── Node Selector ───────────────────────────────────────────
+nodeSelector: {}
+
+tolerations: []
+
+affinity:
+  podAntiAffinity:
+    preferredDuringSchedulingIgnoredDuringExecution:
+      - weight: 100
+        podAffinityTerm:
+          labelSelector:
+            matchExpressions:
+              - key: app
+                operator: In
+                values:
+                  - sentinelx-api
+          topologyKey: kubernetes.io/hostname
+
+# ─── Monitoring ──────────────────────────────────────────────
+monitoring:
+  enabled: true
+  serviceMonitor:
+    enabled: true
+    interval: 30s
+    path: /metrics
+  alerts:
+    enabled: true
+
+# ─── Network Policies ────────────────────────────────────────
+networkPolicy:
+  enabled: true
+
+# ─── Persistence ─────────────────────────────────────────────
+persistence:
+  enabled: true
+  storageClass: ""
+  size: 10Gi
+  accessMode: ReadWriteOnce

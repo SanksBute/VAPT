@@ -1,0 +1,154 @@
+apiVersion: apps/v1
+kind: Deployment
+metadata:
+  name: sentinelx-api
+  namespace: {{ .Release.Namespace }}
+  labels:
+    app: sentinelx-api
+    version: {{ .Values.image.apiGateway.tag | quote }}
+    environment: {{ .Values.environment }}
+    managed-by: helm
+    release: {{ .Release.Name }}
+  annotations:
+    deployment.kubernetes.io/revision: "1"
+spec:
+  replicas: {{ .Values.replicaCount.api }}
+  selector:
+    matchLabels:
+      app: sentinelx-api
+  strategy:
+    type: RollingUpdate
+    rollingUpdate:
+      maxSurge: 1
+      maxUnavailable: 0
+  template:
+    metadata:
+      labels:
+        app: sentinelx-api
+        version: {{ .Values.image.apiGateway.tag | quote }}
+      annotations:
+        prometheus.io/scrape: "true"
+        prometheus.io/path: "/metrics"
+        prometheus.io/port: "3001"
+    spec:
+      serviceAccountName: {{ .Values.serviceAccount.name }}
+      securityContext:
+        {{- toYaml .Values.podSecurityContext | nindent 8 }}
+      {{- with .Values.imagePullSecrets }}
+      imagePullSecrets:
+        {{- toYaml . | nindent 8 }}
+      {{- end }}
+      terminationGracePeriodSeconds: 60
+      containers:
+        - name: api-gateway
+          image: {{ .Values.image.registry }}/{{ .Values.image.apiGateway.repository }}:{{ .Values.image.apiGateway.tag }}
+          imagePullPolicy: {{ .Values.image.apiGateway.pullPolicy }}
+          securityContext:
+            {{- toYaml .Values.securityContext | nindent 12 }}
+          ports:
+            - name: http
+              containerPort: 3001
+              protocol: TCP
+            - name: metrics
+              containerPort: 9090
+              protocol: TCP
+          env:
+            {{- range $key, $value := .Values.env.api }}
+            - name: {{ $key }}
+              value: {{ $value | quote }}
+            {{- end }}
+          envFrom:
+            - secretRef:
+                name: {{ .Values.secrets.existingSecret }}
+          livenessProbe:
+            {{- toYaml .Values.livenessProbe.api | nindent 12 }}
+          readinessProbe:
+            {{- toYaml .Values.readinessProbe.api | nindent 12 }}
+          resources:
+            {{- toYaml .Values.resources.api | nindent 12 }}
+          volumeMounts:
+            - name: tmp
+              mountPath: /tmp
+            - name: scanner-workdir
+              mountPath: /tmp/sentinelx
+      volumes:
+        - name: tmp
+          emptyDir: {}
+        - name: scanner-workdir
+          emptyDir:
+            sizeLimit: 5Gi
+      affinity:
+        {{- toYaml .Values.affinity | nindent 8 }}
+      {{- with .Values.nodeSelector }}
+      nodeSelector:
+        {{- toYaml . | nindent 8 }}
+      {{- end }}
+      {{- with .Values.tolerations }}
+      tolerations:
+        {{- toYaml . | nindent 8 }}
+      {{- end }}
+      topologySpreadConstraints:
+        - maxSkew: 1
+          topologyKey: kubernetes.io/hostname
+          whenUnsatisfiable: DoNotSchedule
+          labelSelector:
+            matchLabels:
+              app: sentinelx-api
+---
+apiVersion: v1
+kind: Service
+metadata:
+  name: sentinelx-api
+  namespace: {{ .Release.Namespace }}
+  labels:
+    app: sentinelx-api
+spec:
+  type: {{ .Values.service.api.type }}
+  selector:
+    app: sentinelx-api
+  ports:
+    - name: http
+      port: {{ .Values.service.api.port }}
+      targetPort: 3001
+      protocol: TCP
+---
+{{- if .Values.autoscaling.enabled }}
+apiVersion: autoscaling/v2
+kind: HorizontalPodAutoscaler
+metadata:
+  name: sentinelx-api
+  namespace: {{ .Release.Namespace }}
+spec:
+  scaleTargetRef:
+    apiVersion: apps/v1
+    kind: Deployment
+    name: sentinelx-api
+  minReplicas: {{ .Values.autoscaling.api.minReplicas }}
+  maxReplicas: {{ .Values.autoscaling.api.maxReplicas }}
+  metrics:
+    - type: Resource
+      resource:
+        name: cpu
+        target:
+          type: Utilization
+          averageUtilization: {{ .Values.autoscaling.api.targetCPUUtilizationPercentage }}
+    - type: Resource
+      resource:
+        name: memory
+        target:
+          type: Utilization
+          averageUtilization: {{ .Values.autoscaling.api.targetMemoryUtilizationPercentage }}
+  behavior:
+    scaleDown:
+      stabilizationWindowSeconds: 300
+      policies:
+        - type: Pods
+          value: 1
+          periodSeconds: 60
+    scaleUp:
+      stabilizationWindowSeconds: 60
+      policies:
+        - type: Pods
+          value: 2
+          periodSeconds: 60
+{{- end }}

@@ -1,0 +1,98 @@
+# Dependencies
+node_modules
+.pnpm-store
+
+# Build outputs
+dist
+build
+.next
+out
+
+# Environment files
+.env
+.env.local
+.env.*.local
+!.env.example
+
+# Logs
+logs
+*.log
+npm-debug.log*
+pnpm-debug.log*
+yarn-debug.log*
+yarn-error.log*
+lerna-debug.log*
+
+# OS generated files
+.DS_Store
+.DS_Store?
+._*
+.Spotlight-V100
+.Trashes
+ehthumbs.db
+Thumbs.db
+
+# Editor directories and files
+.idea
+.vscode
+!.vscode/extensions.json
+!.vscode/settings.json
+*.suo
+*.ntvs*
+*.njsproj
+*.sln
+*.sw?
+
+# TypeScript cache
+*.tsbuildinfo
+
+# Test coverage
+coverage
+.nyc_output
+
+# Prisma
+prisma/migrations/*.sql
+!prisma/migrations/
+
+# Docker volumes
+docker-volumes/
+
+# Terraform
+.terraform
+*.tfstate
+*.tfstate.backup
+*.tfvars
+!*.tfvars.example
+.terraform.lock.hcl
+
+# Kubernetes secrets
+*-secret.yaml
+!*-secret.example.yaml
+
+# Certificates
+*.pem
+*.key
+*.crt
+*.p12
+*.pfx
+
+# Turbo cache
+.turbo
+
+# Generated files
+src/generated/
+packages/database/src/generated/
+
+# Sentry
+.sentryclirc
+
+# Jest
+jest.config.js.cache
+
+# Playwright
+playwright-report
+test-results
+
+# Next.js
+.vercel
+.netlify

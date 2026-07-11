@@ -1,0 +1,2370 @@
+// SentinelX AI — Complete Prisma Schema
+// Enterprise AI-Powered Offensive Security Platform
+// Version: 1.0.0
+
+generator client {
+  provider        = "prisma-client-js"
+  previewFeatures = ["postgresqlExtensions", "fullTextSearch", "metrics"]
+}
+
+datasource db {
+  provider   = "postgresql"
+  url        = env("DATABASE_URL")
+  extensions = [pgcrypto, pg_trgm, pgvector(map: "vector"), uuid_ossp(map: "uuid-ossp")]
+}
+
+// ============================================================
+// ENUMS
+// ============================================================
+
+enum UserStatus {
+  ACTIVE
+  INACTIVE
+  SUSPENDED
+  PENDING_VERIFICATION
+  LOCKED
+}
+
+enum UserRole {
+  SUPER_ADMIN
+  PLATFORM_ADMIN
+  ORG_OWNER
+  ORG_ADMIN
+  SECURITY_ENGINEER
+  PENETRATION_TESTER
+  ANALYST
+  VIEWER
+  API_USER
+}
+
+enum MfaMethod {
+  TOTP
+  SMS
+  EMAIL
+  HARDWARE_KEY
+}
+
+enum OrgStatus {
+  ACTIVE
+  INACTIVE
+  SUSPENDED
+  TRIAL
+  CHURNED
+}
+
+enum OrgTier {
+  FREE
+  STARTER
+  PROFESSIONAL
+  ENTERPRISE
+  GOVERNMENT
+}
+
+enum AssetType {
+  SERVER
+  WORKSTATION
+  NETWORK_DEVICE
+  CLOUD_INSTANCE
+  CONTAINER
+  KUBERNETES_POD
+  WEB_APPLICATION
+  API_ENDPOINT
+  DATABASE
+  DOMAIN
+  IP_ADDRESS
+  URL
+  CODE_REPOSITORY
+  MOBILE_APPLICATION
+  IOT_DEVICE
+  VIRTUAL_MACHINE
+  LOAD_BALANCER
+  STORAGE_BUCKET
+  SERVERLESS_FUNCTION
+  MESSAGE_QUEUE
+}
+
+enum AssetStatus {
+  ACTIVE
+  INACTIVE
+  DECOMMISSIONED
+  UNKNOWN
+  PENDING_REVIEW
+}
+
+enum AssetCriticality {
+  CRITICAL
+  HIGH
+  MEDIUM
+  LOW
+  INFORMATIONAL
+}
+
+enum ScanStatus {
+  PENDING
+  QUEUED
+  INITIALIZING
+  RUNNING
+  PAUSED
+  COMPLETED
+  FAILED
+  CANCELLED
+  PARTIAL
+  TIMEOUT
+}
+
+enum ScanType {
+  DISCOVERY
+  PORT_SCAN
+  VULNERABILITY_ASSESSMENT
+  WEB_APPLICATION
+  API_SECURITY
+  CLOUD_SECURITY
+  CONTAINER_SECURITY
+  KUBERNETES_SECURITY
+  AD_SECURITY
+  CODE_ANALYSIS
+  SECRET_DETECTION
+  PENETRATION_TEST
+  COMPLIANCE
+  THREAT_INTEL
+  FULL
+}
+
+enum ScannerType {
+  NMAP
+  MASSCAN
+  RUSTSCAN
+  OPENVAS
+  ZAP
+  NIKTO
+  SQLMAP
+  NUCLEI
+  TRIVY
+  SCOUTSUITE
+  PROWLER
+  SEMGREP
+  MOBSF
+  LYNIS
+  OSQUERY
+  FALCO
+  CUSTOM
+}
+
+enum VulnerabilitySeverity {
+  CRITICAL
+  HIGH
+  MEDIUM
+  LOW
+  INFORMATIONAL
+  NONE
+}
+
+enum VulnerabilityStatus {
+  OPEN
+  IN_PROGRESS
+  RESOLVED
+  ACCEPTED_RISK
+  FALSE_POSITIVE
+  DUPLICATE
+  WONT_FIX
+  REOPENED
+}
+
+enum VulnerabilityCategory {
+  INJECTION
+  BROKEN_AUTH
+  SENSITIVE_DATA_EXPOSURE
+  XXE
+  BROKEN_ACCESS_CONTROL
+  SECURITY_MISCONFIGURATION
+  XSS
+  INSECURE_DESERIALIZATION
+  VULNERABLE_COMPONENTS
+  INSUFFICIENT_LOGGING
+  SSRF
+  CRYPTOGRAPHIC_FAILURE
+  INSECURE_DESIGN
+  SOFTWARE_SUPPLY_CHAIN
+  COMMAND_INJECTION
+  PATH_TRAVERSAL
+  OPEN_REDIRECT
+  CSRF
+  IDOR
+  PRIVILEGE_ESCALATION
+  BUFFER_OVERFLOW
+  RACE_CONDITION
+  DENIAL_OF_SERVICE
+  INFORMATION_DISCLOSURE
+  WEAK_CRYPTOGRAPHY
+  HARDCODED_SECRETS
+  MISCONFIGURATION
+  UNPATCHED_SOFTWARE
+  NETWORK_EXPOSURE
+  CLOUD_MISCONFIGURATION
+}
+
+enum ComplianceFramework {
+  SOC2_TYPE1
+  SOC2_TYPE2
+  ISO27001
+  PCI_DSS_V4
+  HIPAA
+  GDPR
+  NIST_CSF
+  NIST_SP800_53
+  MITRE_ATTACK
+  OWASP_ASVS
+  CIS_CONTROLS
+  OWASP_TOP10
+  DISA_STIG
+  FedRAMP
+}
+
+enum ComplianceStatus {
+  COMPLIANT
+  NON_COMPLIANT
+  PARTIALLY_COMPLIANT
+  NOT_APPLICABLE
+  UNDER_REVIEW
+}
+
+enum RiskLevel {
+  CRITICAL
+  HIGH
+  MEDIUM
+  LOW
+  MINIMAL
+}
+
+enum SubscriptionStatus {
+  ACTIVE
+  TRIALING
+  PAST_DUE
+  CANCELLED
+  UNPAID
+  INCOMPLETE
+  INCOMPLETE_EXPIRED
+  PAUSED
+}
+
+enum BillingInterval {
+  MONTHLY
+  ANNUALLY
+  QUARTERLY
+}
+
+enum NotificationChannel {
+  IN_APP
+  EMAIL
+  SLACK
+  TEAMS
+  PAGERDUTY
+  WEBHOOK
+  SMS
+}
+
+enum NotificationStatus {
+  PENDING
+  SENT
+  DELIVERED
+  FAILED
+  READ
+}
+
+enum NotificationSeverity {
+  CRITICAL
+  HIGH
+  MEDIUM
+  LOW
+  INFO
+}
+
+enum TicketStatus {
+  OPEN
+  IN_PROGRESS
+  REVIEW
+  RESOLVED
+  CLOSED
+  WONT_FIX
+}
+
+enum TicketPriority {
+  CRITICAL
+  HIGH
+  MEDIUM
+  LOW
+}
+
+enum ReportStatus {
+  GENERATING
+  COMPLETED
+  FAILED
+  EXPIRED
+}
+
+enum ReportFormat {
+  PDF
+  WORD
+  EXCEL
+  CSV
+  JSON
+  HTML
+}
+
+enum ReportType {
+  EXECUTIVE_SUMMARY
+  TECHNICAL_DETAIL
+  COMPLIANCE
+  RISK_ASSESSMENT
+  PENETRATION_TEST
+  VULNERABILITY_MANAGEMENT
+  ASSET_INVENTORY
+  AI_SUMMARY
+}
+
+enum AuditAction {
+  CREATE
+  READ
+  UPDATE
+  DELETE
+  LOGIN
+  LOGOUT
+  LOGIN_FAILED
+  MFA_ENABLED
+  MFA_DISABLED
+  PASSWORD_CHANGED
+  PASSWORD_RESET
+  API_KEY_CREATED
+  API_KEY_REVOKED
+  SCAN_STARTED
+  SCAN_PAUSED
+  SCAN_CANCELLED
+  SCAN_COMPLETED
+  VULNERABILITY_ACCEPTED
+  VULNERABILITY_RESOLVED
+  REPORT_GENERATED
+  EXPORT_PERFORMED
+  SETTINGS_CHANGED
+  PERMISSION_CHANGED
+  MEMBER_INVITED
+  MEMBER_REMOVED
+  SUBSCRIPTION_CHANGED
+}
+
+enum CloudProvider {
+  AWS
+  AZURE
+  GCP
+  ALIBABA
+  ORACLE
+  DIGITALOCEAN
+  LINODE
+  VULTR
+  CUSTOM
+}
+
+enum AIProvider {
+  OPENAI
+  ANTHROPIC
+  OLLAMA
+  AZURE_OPENAI
+  GOOGLE_VERTEX
+  COHERE
+  MISTRAL
+}
+
+enum PluginStatus {
+  ACTIVE
+  INACTIVE
+  DEPRECATED
+  PENDING_REVIEW
+  REJECTED
+}
+
+enum IntegrationStatus {
+  ACTIVE
+  INACTIVE
+  ERROR
+  PENDING_SETUP
+}
+
+enum ScheduleFrequency {
+  ONCE
+  HOURLY
+  DAILY
+  WEEKLY
+  MONTHLY
+  QUARTERLY
+  CUSTOM_CRON
+}
+
+// ============================================================
+// ORGANIZATION & TENANCY
+// ============================================================
+
+model Organization {
+  id                    String      @id @default(dbgenerated("gen_random_uuid()")) @db.Uuid
+  slug                  String      @unique @db.VarChar(100)
+  name                  String      @db.VarChar(255)
+  displayName           String?     @db.VarChar(255)
+  logoUrl               String?     @db.VarChar(2048)
+  faviconUrl            String?     @db.VarChar(2048)
+  primaryColor          String?     @db.VarChar(7)
+  secondaryColor        String?     @db.VarChar(7)
+  domain                String?     @unique @db.VarChar(255)
+  allowedEmailDomains   String[]    @default([])
+  status                OrgStatus   @default(ACTIVE)
+  tier                  OrgTier     @default(STARTER)
+  isWhiteLabel          Boolean     @default(false)
+  whiteLabelConfig      Json?
+  settings              Json        @default("{}")
+  metadata              Json        @default("{}")
+  maxUsers              Int         @default(10)
+  maxAssets             Int         @default(100)
+  maxScansPerMonth      Int         @default(10)
+  enabledFeatures       String[]    @default([])
+  ssoEnabled            Boolean     @default(false)
+  ssoConfig             Json?
+  mfaRequired           Boolean     @default(false)
+  ipWhitelist           String[]    @default([])
+  dataRetentionDays     Int         @default(365)
+  timezone              String      @default("UTC") @db.VarChar(100)
+  country               String?     @db.VarChar(2)
+  address               Json?
+  billingEmail          String?     @db.VarChar(255)
+  technicalEmail        String?     @db.VarChar(255)
+  securityEmail         String?     @db.VarChar(255)
+  version               Int         @default(1)
+  deletedAt             DateTime?
+  createdAt             DateTime    @default(now())
+  updatedAt             DateTime    @updatedAt
+
+  // Relations
+  users                 OrganizationMember[]
+  assets                Asset[]
+  scans                 Scan[]
+  vulnerabilities       Vulnerability[]
+  reports               Report[]
+  tickets               Ticket[]
+  apiKeys               ApiKey[]
+  integrations          Integration[]
+  webhooks              Webhook[]
+  notifications         Notification[]
+  auditLogs             AuditLog[]
+  subscription          Subscription?
+  complianceProfiles    ComplianceProfile[]
+  riskProfiles          RiskProfile[]
+  scanSchedules         ScanSchedule[]
+  tags                  Tag[]
+  customFields          CustomField[]
+  pluginInstallations   PluginInstallation[]
+  threatIntelFeeds      ThreatIntelFeed[]
+  cloudConnections      CloudConnection[]
+  aiConversations       AIConversation[]
+  dashboards            Dashboard[]
+  invitations           Invitation[]
+  projects              Project[]
+  assetGroups           AssetGroup[]
+
+  @@index([slug])
+  @@index([domain])
+  @@index([status])
+  @@index([tier])
+  @@index([deletedAt])
+  @@map("organizations")
+}
+
+model OrganizationMember {
+  id             String     @id @default(dbgenerated("gen_random_uuid()")) @db.Uuid
+  organizationId String     @db.Uuid
+  userId         String     @db.Uuid
+  role           UserRole   @default(VIEWER)
+  customRoleId   String?    @db.Uuid
+  permissions    String[]   @default([])
+  isOwner        Boolean    @default(false)
+  joinedAt       DateTime   @default(now())
+  invitedBy      String?    @db.Uuid
+  lastActiveAt   DateTime?
+  deletedAt      DateTime?
+  createdAt      DateTime   @default(now())
+  updatedAt      DateTime   @updatedAt
+
+  organization   Organization @relation(fields: [organizationId], references: [id])
+  user           User         @relation(fields: [userId], references: [id])
+  customRole     CustomRole?  @relation(fields: [customRoleId], references: [id])
+
+  @@unique([organizationId, userId])
+  @@index([organizationId])
+  @@index([userId])
+  @@index([role])
+  @@index([deletedAt])
+  @@map("organization_members")
+}
+
+model Invitation {
+  id             String    @id @default(dbgenerated("gen_random_uuid()")) @db.Uuid
+  organizationId String    @db.Uuid
+  email          String    @db.VarChar(255)
+  role           UserRole  @default(VIEWER)
+  token          String    @unique @db.VarChar(255)
+  expiresAt      DateTime
+  acceptedAt     DateTime?
+  revokedAt      DateTime?
+  invitedById    String    @db.Uuid
+  createdAt      DateTime  @default(now())
+  updatedAt      DateTime  @updatedAt
+
+  organization   Organization @relation(fields: [organizationId], references: [id])
+  invitedBy      User         @relation(fields: [invitedById], references: [id])
+
+  @@index([organizationId])
+  @@index([email])
+  @@index([token])
+  @@index([expiresAt])
+  @@map("invitations")
+}
+
+// ============================================================
+// USERS & AUTHENTICATION
+// ============================================================
+
+model User {
+  id                  String      @id @default(dbgenerated("gen_random_uuid()")) @db.Uuid
+  email               String      @unique @db.VarChar(255)
+  emailVerified       Boolean     @default(false)
+  emailVerifiedAt     DateTime?
+  passwordHash        String?     @db.VarChar(255)
+  firstName           String      @db.VarChar(100)
+  lastName            String      @db.VarChar(100)
+  displayName         String?     @db.VarChar(200)
+  avatarUrl           String?     @db.VarChar(2048)
+  phone               String?     @db.VarChar(50)
+  phoneVerified       Boolean     @default(false)
+  timezone            String      @default("UTC") @db.VarChar(100)
+  locale              String      @default("en") @db.VarChar(10)
+  theme               String      @default("dark") @db.VarChar(20)
+  status              UserStatus  @default(PENDING_VERIFICATION)
+  isSuperAdmin        Boolean     @default(false)
+  isServiceAccount    Boolean     @default(false)
+  mfaEnabled          Boolean     @default(false)
+  mfaEnforcedAt       DateTime?
+  lastLoginAt         DateTime?
+  lastLoginIp         String?     @db.VarChar(50)
+  loginCount          Int         @default(0)
+  failedLoginCount    Int         @default(0)
+  lockedUntil         DateTime?
+  passwordChangedAt   DateTime?
+  mustChangePassword  Boolean     @default(false)
+  preferences         Json        @default("{}")
+  metadata            Json        @default("{}")
+  version             Int         @default(1)
+  deletedAt           DateTime?
+  createdAt           DateTime    @default(now())
+  updatedAt           DateTime    @updatedAt
+
+  // Relations
+  organizations       OrganizationMember[]
+  sessions            UserSession[]
+  mfaMethods          MfaDevice[]
+  apiKeys             ApiKey[]
+  oauthAccounts       OAuthAccount[]
+  emailVerifications  EmailVerification[]
+  passwordResets      PasswordReset[]
+  auditLogs           AuditLog[]
+  assignedTickets     Ticket[]           @relation("TicketAssignee")
+  createdTickets      Ticket[]           @relation("TicketCreator")
+  reports             Report[]
+  aiConversations     AIConversation[]
+  invitations         Invitation[]
+  notificationPrefs   NotificationPreference[]
+  dashboards          Dashboard[]
+
+  @@index([email])
+  @@index([status])
+  @@index([deletedAt])
+  @@index([isSuperAdmin])
+  @@map("users")
+}
+
+model UserSession {
+  id           String    @id @default(dbgenerated("gen_random_uuid()")) @db.Uuid
+  userId       String    @db.Uuid
+  tokenHash    String    @unique @db.VarChar(255)
+  refreshTokenHash String? @unique @db.VarChar(255)
+  deviceInfo   Json      @default("{}")
+  ipAddress    String    @db.VarChar(50)
+  userAgent    String?   @db.VarChar(512)
+  geolocation  Json?
+  isActive     Boolean   @default(true)
+  revokedAt    DateTime?
+  expiresAt    DateTime
+  lastSeenAt   DateTime  @default(now())
+  createdAt    DateTime  @default(now())
+  updatedAt    DateTime  @updatedAt
+
+  user         User      @relation(fields: [userId], references: [id], onDelete: Cascade)
+
+  @@index([userId])
+  @@index([tokenHash])
+  @@index([expiresAt])
+  @@index([isActive])
+  @@map("user_sessions")
+}
+
+model MfaDevice {
+  id          String    @id @default(dbgenerated("gen_random_uuid()")) @db.Uuid
+  userId      String    @db.Uuid
+  method      MfaMethod
+  name        String    @db.VarChar(100)
+  secret      String?   @db.VarChar(255)
+  phoneNumber String?   @db.VarChar(50)
+  backupCodes Json?
+  isVerified  Boolean   @default(false)
+  isPrimary   Boolean   @default(false)
+  lastUsedAt  DateTime?
+  deletedAt   DateTime?
+  createdAt   DateTime  @default(now())
+  updatedAt   DateTime  @updatedAt
+
+  user        User      @relation(fields: [userId], references: [id], onDelete: Cascade)
+
+  @@index([userId])
+  @@index([method])
+  @@map("mfa_devices")
+}
+
+model OAuthAccount {
+  id             String   @id @default(dbgenerated("gen_random_uuid()")) @db.Uuid
+  userId         String   @db.Uuid
+  provider       String   @db.VarChar(50)
+  providerUserId String   @db.VarChar(255)
+  accessToken    String?  @db.VarChar(4096)
+  refreshToken   String?  @db.VarChar(4096)
+  expiresAt      DateTime?
+  scope          String?  @db.VarChar(1024)
+  profile        Json?
+  createdAt      DateTime @default(now())
+  updatedAt      DateTime @updatedAt
+
+  user           User     @relation(fields: [userId], references: [id], onDelete: Cascade)
+
+  @@unique([provider, providerUserId])
+  @@index([userId])
+  @@map("oauth_accounts")
+}
+
+model EmailVerification {
+  id        String   @id @default(dbgenerated("gen_random_uuid()")) @db.Uuid
+  userId    String   @db.Uuid
+  token     String   @unique @db.VarChar(255)
+  expiresAt DateTime
+  usedAt    DateTime?
+  createdAt DateTime @default(now())
+
+  user      User     @relation(fields: [userId], references: [id], onDelete: Cascade)
+
+  @@index([userId])
+  @@index([token])
+  @@map("email_verifications")
+}
+
+model PasswordReset {
+  id        String   @id @default(dbgenerated("gen_random_uuid()")) @db.Uuid
+  userId    String   @db.Uuid
+  tokenHash String   @unique @db.VarChar(255)
+  expiresAt DateTime
+  usedAt    DateTime?
+  ipAddress String?  @db.VarChar(50)
+  createdAt DateTime @default(now())
+
+  user      User     @relation(fields: [userId], references: [id], onDelete: Cascade)
+
+  @@index([userId])
+  @@map("password_resets")
+}
+
+model ApiKey {
+  id             String    @id @default(dbgenerated("gen_random_uuid()")) @db.Uuid
+  organizationId String    @db.Uuid
+  userId         String    @db.Uuid
+  name           String    @db.VarChar(255)
+  keyHash        String    @unique @db.VarChar(255)
+  keyPrefix      String    @db.VarChar(10)
+  scopes         String[]  @default([])
+  allowedIps     String[]  @default([])
+  lastUsedAt     DateTime?
+  lastUsedIp     String?   @db.VarChar(50)
+  expiresAt      DateTime?
+  revokedAt      DateTime?
+  usageCount     Int       @default(0)
+  rateLimitRpm   Int       @default(100)
+  metadata       Json      @default("{}")
+  createdAt      DateTime  @default(now())
+  updatedAt      DateTime  @updatedAt
+
+  organization   Organization @relation(fields: [organizationId], references: [id])
+  user           User         @relation(fields: [userId], references: [id])
+
+  @@index([organizationId])
+  @@index([userId])
+  @@index([keyHash])
+  @@index([expiresAt])
+  @@map("api_keys")
+}
+
+model CustomRole {
+  id             String    @id @default(dbgenerated("gen_random_uuid()")) @db.Uuid
+  organizationId String    @db.Uuid
+  name           String    @db.VarChar(100)
+  description    String?   @db.VarChar(500)
+  permissions    String[]  @default([])
+  isSystemRole   Boolean   @default(false)
+  parentRoleId   String?   @db.Uuid
+  deletedAt      DateTime?
+  createdAt      DateTime  @default(now())
+  updatedAt      DateTime  @updatedAt
+
+  members        OrganizationMember[]
+  parentRole     CustomRole?  @relation("RoleHierarchy", fields: [parentRoleId], references: [id])
+  childRoles     CustomRole[] @relation("RoleHierarchy")
+
+  @@unique([organizationId, name])
+  @@index([organizationId])
+  @@map("custom_roles")
+}
+
+// ============================================================
+// PROJECTS & ASSET GROUPS
+// ============================================================
+
+model Project {
+  id             String    @id @default(dbgenerated("gen_random_uuid()")) @db.Uuid
+  organizationId String    @db.Uuid
+  name           String    @db.VarChar(255)
+  description    String?   @db.Text
+  color          String?   @db.VarChar(7)
+  icon           String?   @db.VarChar(50)
+  isDefault      Boolean   @default(false)
+  metadata       Json      @default("{}")
+  deletedAt      DateTime?
+  createdAt      DateTime  @default(now())
+  updatedAt      DateTime  @updatedAt
+
+  organization   Organization @relation(fields: [organizationId], references: [id])
+  assets         Asset[]
+  scans          Scan[]
+
+  @@index([organizationId])
+  @@index([deletedAt])
+  @@map("projects")
+}
+
+model AssetGroup {
+  id             String    @id @default(dbgenerated("gen_random_uuid()")) @db.Uuid
+  organizationId String    @db.Uuid
+  name           String    @db.VarChar(255)
+  description    String?   @db.Text
+  query          Json?
+  isDynamic      Boolean   @default(false)
+  deletedAt      DateTime?
+  createdAt      DateTime  @default(now())
+  updatedAt      DateTime  @updatedAt
+
+  organization   Organization @relation(fields: [organizationId], references: [id])
+  assets         AssetGroupMembership[]
+
+  @@index([organizationId])
+  @@index([deletedAt])
+  @@map("asset_groups")
+}
+
+model AssetGroupMembership {
+  id           String     @id @default(dbgenerated("gen_random_uuid()")) @db.Uuid
+  assetGroupId String     @db.Uuid
+  assetId      String     @db.Uuid
+  createdAt    DateTime   @default(now())
+
+  assetGroup   AssetGroup @relation(fields: [assetGroupId], references: [id], onDelete: Cascade)
+  asset        Asset      @relation(fields: [assetId], references: [id], onDelete: Cascade)
+
+  @@unique([assetGroupId, assetId])
+  @@map("asset_group_memberships")
+}
+
+// ============================================================
+// ASSETS
+// ============================================================
+
+model Asset {
+  id                    String           @id @default(dbgenerated("gen_random_uuid()")) @db.Uuid
+  organizationId        String           @db.Uuid
+  projectId             String?          @db.Uuid
+  name                  String           @db.VarChar(500)
+  type                  AssetType
+  status                AssetStatus      @default(ACTIVE)
+  criticality           AssetCriticality @default(MEDIUM)
+  identifier            String           @db.VarChar(500)
+  hostname              String?          @db.VarChar(255)
+  ipAddresses           String[]         @default([])
+  macAddresses          String[]         @default([])
+  fqdn                  String?          @db.VarChar(500)
+  operatingSystem       String?          @db.VarChar(255)
+  osVersion             String?          @db.VarChar(100)
+  ports                 Json             @default("[]")
+  services              Json             @default("[]")
+  technologies          Json             @default("[]")
+  cloudProvider         CloudProvider?
+  cloudRegion           String?          @db.VarChar(100)
+  cloudAccountId        String?          @db.VarChar(255)
+  cloudResourceId       String?          @db.VarChar(500)
+  cloudMetadata         Json?
+  containerImage        String?          @db.VarChar(500)
+  containerDigest       String?          @db.VarChar(255)
+  kubernetesNamespace   String?          @db.VarChar(255)
+  kubernetesCluster     String?          @db.VarChar(255)
+  repositoryUrl         String?          @db.VarChar(2048)
+  repositoryBranch      String?          @db.VarChar(255)
+  owner                 String?          @db.VarChar(255)
+  team                  String?          @db.VarChar(255)
+  environment           String?          @db.VarChar(50)
+  networkZone           String?          @db.VarChar(100)
+  dataClassification    String?          @db.VarChar(50)
+  complianceScope       String[]         @default([])
+  riskScore             Float            @default(0)
+  exposureScore         Float            @default(0)
+  firstSeenAt           DateTime         @default(now())
+  lastSeenAt            DateTime         @default(now())
+  lastScannedAt         DateTime?
+  attributes            Json             @default("{}")
+  customFields          Json             @default("{}")
+  notes                 String?          @db.Text
+  version               Int              @default(1)
+  deletedAt             DateTime?
+  createdAt             DateTime         @default(now())
+  updatedAt             DateTime         @updatedAt
+
+  organization          Organization     @relation(fields: [organizationId], references: [id])
+  project               Project?         @relation(fields: [projectId], references: [id])
+  vulnerabilities       AssetVulnerability[]
+  scans                 ScanTarget[]
+  tags                  AssetTag[]
+  groups                AssetGroupMembership[]
+  history               AssetHistory[]
+  ports_detail          AssetPort[]
+  certificates          AssetCertificate[]
+  technologies_detail   AssetTechnology[]
+
+  @@unique([organizationId, identifier])
+  @@index([organizationId])
+  @@index([projectId])
+  @@index([type])
+  @@index([status])
+  @@index([criticality])
+  @@index([riskScore])
+  @@index([deletedAt])
+  @@index([lastSeenAt])
+  @@map("assets")
+}
+
+model AssetHistory {
+  id        String   @id @default(dbgenerated("gen_random_uuid()")) @db.Uuid
+  assetId   String   @db.Uuid
+  changes   Json
+  changedBy String?  @db.Uuid
+  reason    String?  @db.VarChar(500)
+  version   Int
+  createdAt DateTime @default(now())
+
+  asset     Asset    @relation(fields: [assetId], references: [id], onDelete: Cascade)
+
+  @@index([assetId])
+  @@index([version])
+  @@map("asset_history")
+}
+
+model AssetPort {
+  id        String   @id @default(dbgenerated("gen_random_uuid()")) @db.Uuid
+  assetId   String   @db.Uuid
+  port      Int
+  protocol  String   @db.VarChar(10)
+  state     String   @db.VarChar(50)
+  service   String?  @db.VarChar(100)
+  version   String?  @db.VarChar(255)
+  banner    String?  @db.Text
+  firstSeen DateTime @default(now())
+  lastSeen  DateTime @default(now())
+  createdAt DateTime @default(now())
+  updatedAt DateTime @updatedAt
+
+  asset     Asset    @relation(fields: [assetId], references: [id], onDelete: Cascade)
+
+  @@unique([assetId, port, protocol])
+  @@index([assetId])
+  @@index([port])
+  @@map("asset_ports")
+}
+
+model AssetCertificate {
+  id             String    @id @default(dbgenerated("gen_random_uuid()")) @db.Uuid
+  assetId        String    @db.Uuid
+  commonName     String    @db.VarChar(500)
+  issuer         String?   @db.VarChar(500)
+  subjectAltNames String[] @default([])
+  fingerprint    String?   @db.VarChar(255)
+  algorithm      String?   @db.VarChar(100)
+  keySize        Int?
+  issuedAt       DateTime?
+  expiresAt      DateTime?
+  isSelfSigned   Boolean   @default(false)
+  isExpired      Boolean   @default(false)
+  isRevoked      Boolean   @default(false)
+  rawCert        String?   @db.Text
+  createdAt      DateTime  @default(now())
+  updatedAt      DateTime  @updatedAt
+
+  asset          Asset     @relation(fields: [assetId], references: [id], onDelete: Cascade)
+
+  @@index([assetId])
+  @@index([expiresAt])
+  @@map("asset_certificates")
+}
+
+model AssetTechnology {
+  id         String   @id @default(dbgenerated("gen_random_uuid()")) @db.Uuid
+  assetId    String   @db.Uuid
+  name       String   @db.VarChar(255)
+  version    String?  @db.VarChar(100)
+  category   String?  @db.VarChar(100)
+  cpe        String?  @db.VarChar(500)
+  confidence Int      @default(100)
+  source     String?  @db.VarChar(100)
+  firstSeen  DateTime @default(now())
+  lastSeen   DateTime @default(now())
+  createdAt  DateTime @default(now())
+  updatedAt  DateTime @updatedAt
+
+  asset      Asset    @relation(fields: [assetId], references: [id], onDelete: Cascade)
+
+  @@index([assetId])
+  @@index([name])
+  @@map("asset_technologies")
+}
+
+model Tag {
+  id             String   @id @default(dbgenerated("gen_random_uuid()")) @db.Uuid
+  organizationId String   @db.Uuid
+  name           String   @db.VarChar(100)
+  color          String   @default("#6366f1") @db.VarChar(7)
+  description    String?  @db.VarChar(500)
+  createdAt      DateTime @default(now())
+  updatedAt      DateTime @updatedAt
+
+  organization   Organization @relation(fields: [organizationId], references: [id])
+  assets         AssetTag[]
+
+  @@unique([organizationId, name])
+  @@index([organizationId])
+  @@map("tags")
+}
+
+model AssetTag {
+  assetId   String   @db.Uuid
+  tagId     String   @db.Uuid
+  createdAt DateTime @default(now())
+
+  asset     Asset    @relation(fields: [assetId], references: [id], onDelete: Cascade)
+  tag       Tag      @relation(fields: [tagId], references: [id], onDelete: Cascade)
+
+  @@id([assetId, tagId])
+  @@map("asset_tags")
+}
+
+model CustomField {
+  id             String   @id @default(dbgenerated("gen_random_uuid()")) @db.Uuid
+  organizationId String   @db.Uuid
+  entityType     String   @db.VarChar(50)
+  name           String   @db.VarChar(100)
+  label          String   @db.VarChar(255)
+  fieldType      String   @db.VarChar(50)
+  options        Json?
+  isRequired     Boolean  @default(false)
+  isSearchable   Boolean  @default(false)
+  order          Int      @default(0)
+  createdAt      DateTime @default(now())
+  updatedAt      DateTime @updatedAt
+
+  organization   Organization @relation(fields: [organizationId], references: [id])
+
+  @@unique([organizationId, entityType, name])
+  @@index([organizationId])
+  @@map("custom_fields")
+}
+
+// ============================================================
+// SCANNING ENGINE
+// ============================================================
+
+model ScanProfile {
+  id             String      @id @default(dbgenerated("gen_random_uuid()")) @db.Uuid
+  organizationId String?     @db.Uuid
+  name           String      @db.VarChar(255)
+  description    String?     @db.Text
+  scanType       ScanType
+  scanners       ScannerType[]
+  configuration  Json        @default("{}")
+  isTemplate     Boolean     @default(false)
+  isDefault      Boolean     @default(false)
+  isSystem       Boolean     @default(false)
+  createdBy      String?     @db.Uuid
+  deletedAt      DateTime?
+  createdAt      DateTime    @default(now())
+  updatedAt      DateTime    @updatedAt
+
+  scans          Scan[]
+
+  @@index([organizationId])
+  @@index([isTemplate])
+  @@map("scan_profiles")
+}
+
+model Scan {
+  id              String     @id @default(dbgenerated("gen_random_uuid()")) @db.Uuid
+  organizationId  String     @db.Uuid
+  projectId       String?    @db.Uuid
+  profileId       String?    @db.Uuid
+  scheduleId      String?    @db.Uuid
+  name            String     @db.VarChar(500)
+  description     String?    @db.Text
+  scanType        ScanType
+  status          ScanStatus @default(PENDING)
+  priority        Int        @default(5)
+  configuration   Json       @default("{}")
+  scope           Json       @default("{}")
+  credentials     Json?
+  excludeList     String[]   @default([])
+  tags            String[]   @default([])
+  initiatedBy     String?    @db.Uuid
+  assignedWorker  String?    @db.VarChar(255)
+  queuedAt        DateTime?
+  startedAt       DateTime?
+  completedAt     DateTime?
+  cancelledAt     DateTime?
+  failedAt        DateTime?
+  errorMessage    String?    @db.Text
+  errorCode       String?    @db.VarChar(50)
+  progress        Int        @default(0)
+  totalTargets    Int        @default(0)
+  scannedTargets  Int        @default(0)
+  findings        Int        @default(0)
+  criticalCount   Int        @default(0)
+  highCount       Int        @default(0)
+  mediumCount     Int        @default(0)
+  lowCount        Int        @default(0)
+  infoCount       Int        @default(0)
+  durationSeconds Int?
+  rawOutput       String?    @db.Text
+  metadata        Json       @default("{}")
+  version         Int        @default(1)
+  deletedAt       DateTime?
+  createdAt       DateTime   @default(now())
+  updatedAt       DateTime   @updatedAt
+
+  organization    Organization  @relation(fields: [organizationId], references: [id])
+  project         Project?      @relation(fields: [projectId], references: [id])
+  profile         ScanProfile?  @relation(fields: [profileId], references: [id])
+  schedule        ScanSchedule? @relation(fields: [scheduleId], references: [id])
+  targets         ScanTarget[]
+  results         ScanResult[]
+  vulnerabilities Vulnerability[]
+  scannerJobs     ScannerJob[]
+  reports         ReportScan[]
+  events          ScanEvent[]
+
+  @@index([organizationId])
+  @@index([projectId])
+  @@index([status])
+  @@index([scanType])
+  @@index([startedAt])
+  @@index([createdAt])
+  @@index([deletedAt])
+  @@map("scans")
+}
+
+model ScanTarget {
+  id        String   @id @default(dbgenerated("gen_random_uuid()")) @db.Uuid
+  scanId    String   @db.Uuid
+  assetId   String?  @db.Uuid
+  value     String   @db.VarChar(500)
+  type      String   @db.VarChar(50)
+  status    String   @default("pending") @db.VarChar(50)
+  metadata  Json     @default("{}")
+  createdAt DateTime @default(now())
+  updatedAt DateTime @updatedAt
+
+  scan      Scan     @relation(fields: [scanId], references: [id], onDelete: Cascade)
+  asset     Asset?   @relation(fields: [assetId], references: [id])
+
+  @@index([scanId])
+  @@index([assetId])
+  @@map("scan_targets")
+}
+
+model ScannerJob {
+  id           String      @id @default(dbgenerated("gen_random_uuid()")) @db.Uuid
+  scanId       String      @db.Uuid
+  scanner      ScannerType
+  status       ScanStatus  @default(PENDING)
+  target       String      @db.VarChar(500)
+  configuration Json       @default("{}")
+  workerId     String?     @db.VarChar(255)
+  startedAt    DateTime?
+  completedAt  DateTime?
+  errorMessage String?     @db.Text
+  rawOutput    String?     @db.Text
+  exitCode     Int?
+  progress     Int         @default(0)
+  retryCount   Int         @default(0)
+  maxRetries   Int         @default(3)
+  createdAt    DateTime    @default(now())
+  updatedAt    DateTime    @updatedAt
+
+  scan         Scan        @relation(fields: [scanId], references: [id], onDelete: Cascade)
+  results      ScanResult[]
+
+  @@index([scanId])
+  @@index([scanner])
+  @@index([status])
+  @@map("scanner_jobs")
+}
+
+model ScanResult {
+  id          String   @id @default(dbgenerated("gen_random_uuid()")) @db.Uuid
+  scanId      String   @db.Uuid
+  jobId       String?  @db.Uuid
+  scanner     String   @db.VarChar(50)
+  rawData     Json
+  parsedData  Json?
+  checksum    String?  @db.VarChar(64)
+  processedAt DateTime?
+  createdAt   DateTime @default(now())
+
+  scan        Scan       @relation(fields: [scanId], references: [id], onDelete: Cascade)
+  job         ScannerJob? @relation(fields: [jobId], references: [id])
+
+  @@index([scanId])
+  @@index([jobId])
+  @@map("scan_results")
+}
+
+model ScanEvent {
+  id        String   @id @default(dbgenerated("gen_random_uuid()")) @db.Uuid
+  scanId    String   @db.Uuid
+  type      String   @db.VarChar(100)
+  message   String   @db.VarChar(1000)
+  data      Json?
+  severity  String   @default("info") @db.VarChar(20)
+  createdAt DateTime @default(now())
+
+  scan      Scan     @relation(fields: [scanId], references: [id], onDelete: Cascade)
+
+  @@index([scanId])
+  @@index([type])
+  @@index([createdAt])
+  @@map("scan_events")
+}
+
+model ScanSchedule {
+  id             String            @id @default(dbgenerated("gen_random_uuid()")) @db.Uuid
+  organizationId String            @db.Uuid
+  name           String            @db.VarChar(255)
+  description    String?           @db.Text
+  scanType       ScanType
+  configuration  Json              @default("{}")
+  targets        Json              @default("[]")
+  frequency      ScheduleFrequency
+  cronExpression String?           @db.VarChar(100)
+  timezone       String            @default("UTC") @db.VarChar(100)
+  isActive       Boolean           @default(true)
+  nextRunAt      DateTime?
+  lastRunAt      DateTime?
+  lastRunStatus  ScanStatus?
+  runCount       Int               @default(0)
+  maxRuns        Int?
+  notifications  Json              @default("[]")
+  createdBy      String?           @db.Uuid
+  deletedAt      DateTime?
+  createdAt      DateTime          @default(now())
+  updatedAt      DateTime          @updatedAt
+
+  organization   Organization      @relation(fields: [organizationId], references: [id])
+  scans          Scan[]
+
+  @@index([organizationId])
+  @@index([isActive])
+  @@index([nextRunAt])
+  @@index([deletedAt])
+  @@map("scan_schedules")
+}
+
+// ============================================================
+// VULNERABILITIES
+// ============================================================
+
+model Vulnerability {
+  id                    String                  @id @default(dbgenerated("gen_random_uuid()")) @db.Uuid
+  organizationId        String                  @db.Uuid
+  scanId                String?                 @db.Uuid
+  title                 String                  @db.VarChar(500)
+  description           String                  @db.Text
+  severity              VulnerabilitySeverity
+  status                VulnerabilityStatus     @default(OPEN)
+  category              VulnerabilityCategory
+  cveIds                String[]                @default([])
+  cweIds                String[]                @default([])
+  cvssV2Score           Float?
+  cvssV2Vector          String?                 @db.VarChar(100)
+  cvssV3Score           Float?
+  cvssV3Vector          String?                 @db.VarChar(100)
+  cvssV4Score           Float?
+  cvssV4Vector          String?                 @db.VarChar(100)
+  epssScore             Float?
+  epssPercentile        Float?
+  exploitAvailable      Boolean                 @default(false)
+  exploitInTheWild      Boolean                 @default(false)
+  patchAvailable        Boolean                 @default(false)
+  patchUrl              String?                 @db.VarChar(2048)
+  solution              String?                 @db.Text
+  workaround            String?                 @db.Text
+  references            Json                    @default("[]")
+  affectedComponent     String?                 @db.VarChar(500)
+  affectedVersion       String?                 @db.VarChar(255)
+  fixedVersion          String?                 @db.VarChar(255)
+  detectionMethod       String?                 @db.VarChar(100)
+  scanner               String?                 @db.VarChar(50)
+  pluginId              String?                 @db.VarChar(255)
+  proof                 String?                 @db.Text
+  evidence              Json                    @default("[]")
+  request               String?                 @db.Text
+  response              String?                 @db.Text
+  payload               String?                 @db.Text
+  screenshot            String?                 @db.VarChar(2048)
+  riskScore             Float                   @default(0)
+  priorityScore         Float                   @default(0)
+  businessImpact        String?                 @db.Text
+  mitigationPlan        String?                 @db.Text
+  dueDate               DateTime?
+  acknowledgedAt        DateTime?
+  acknowledgedBy        String?                 @db.Uuid
+  resolvedAt            DateTime?
+  resolvedBy            String?                 @db.Uuid
+  closedAt              DateTime?
+  falsePositiveReason   String?                 @db.Text
+  acceptedRiskReason    String?                 @db.Text
+  acceptedRiskExpiresAt DateTime?
+  firstDetectedAt       DateTime                @default(now())
+  lastDetectedAt        DateTime                @default(now())
+  reoccurrenceCount     Int                     @default(1)
+  remediationTime       Int?
+  slaDeadline           DateTime?
+  slaBreached           Boolean                 @default(false)
+  complianceControls    String[]                @default([])
+  mitreAttackIds        String[]                @default([])
+  aiSummary             String?                 @db.Text
+  aiRemediation         String?                 @db.Text
+  aiRiskExplanation     String?                 @db.Text
+  tags                  String[]                @default([])
+  customFields          Json                    @default("{}")
+  isTemplate            Boolean                 @default(false)
+  fingerprint           String?                 @db.VarChar(255)
+  version               Int                     @default(1)
+  deletedAt             DateTime?
+  createdAt             DateTime                @default(now())
+  updatedAt             DateTime                @updatedAt
+
+  organization          Organization            @relation(fields: [organizationId], references: [id])
+  scan                  Scan?                   @relation(fields: [scanId], references: [id])
+  assets                AssetVulnerability[]
+  comments              VulnerabilityComment[]
+  history               VulnerabilityHistory[]
+  tickets               TicketVulnerability[]
+  complianceMappings    VulnerabilityCompliance[]
+  patches               VulnerabilityPatch[]
+
+  @@index([organizationId])
+  @@index([scanId])
+  @@index([severity])
+  @@index([status])
+  @@index([category])
+  @@index([riskScore])
+  @@index([cvssV3Score])
+  @@index([exploitAvailable])
+  @@index([firstDetectedAt])
+  @@index([slaDeadline])
+  @@index([deletedAt])
+  @@index([fingerprint])
+  @@map("vulnerabilities")
+}
+
+model AssetVulnerability {
+  id              String    @id @default(dbgenerated("gen_random_uuid()")) @db.Uuid
+  assetId         String    @db.Uuid
+  vulnerabilityId String    @db.Uuid
+  port            Int?
+  protocol        String?   @db.VarChar(10)
+  service         String?   @db.VarChar(100)
+  url             String?   @db.VarChar(2048)
+  parameter       String?   @db.VarChar(500)
+  context         Json?
+  createdAt       DateTime  @default(now())
+  updatedAt       DateTime  @updatedAt
+
+  asset           Asset         @relation(fields: [assetId], references: [id], onDelete: Cascade)
+  vulnerability   Vulnerability @relation(fields: [vulnerabilityId], references: [id], onDelete: Cascade)
+
+  @@unique([assetId, vulnerabilityId])
+  @@index([assetId])
+  @@index([vulnerabilityId])
+  @@map("asset_vulnerabilities")
+}
+
+model VulnerabilityComment {
+  id              String    @id @default(dbgenerated("gen_random_uuid()")) @db.Uuid
+  vulnerabilityId String    @db.Uuid
+  userId          String    @db.Uuid
+  content         String    @db.Text
+  isInternal      Boolean   @default(false)
+  attachments     Json      @default("[]")
+  deletedAt       DateTime?
+  createdAt       DateTime  @default(now())
+  updatedAt       DateTime  @updatedAt
+
+  vulnerability   Vulnerability @relation(fields: [vulnerabilityId], references: [id], onDelete: Cascade)
+
+  @@index([vulnerabilityId])
+  @@index([userId])
+  @@map("vulnerability_comments")
+}
+
+model VulnerabilityHistory {
+  id              String    @id @default(dbgenerated("gen_random_uuid()")) @db.Uuid
+  vulnerabilityId String    @db.Uuid
+  changes         Json
+  changedBy       String?   @db.Uuid
+  version         Int
+  createdAt       DateTime  @default(now())
+
+  vulnerability   Vulnerability @relation(fields: [vulnerabilityId], references: [id], onDelete: Cascade)
+
+  @@index([vulnerabilityId])
+  @@map("vulnerability_history")
+}
+
+model VulnerabilityPatch {
+  id              String    @id @default(dbgenerated("gen_random_uuid()")) @db.Uuid
+  vulnerabilityId String    @db.Uuid
+  patchId         String?   @db.VarChar(255)
+  title           String    @db.VarChar(500)
+  description     String?   @db.Text
+  patchUrl        String?   @db.VarChar(2048)
+  vendor          String?   @db.VarChar(255)
+  releaseDate     DateTime?
+  appliedAt       DateTime?
+  appliedBy       String?   @db.Uuid
+  status          String    @default("available") @db.VarChar(50)
+  createdAt       DateTime  @default(now())
+  updatedAt       DateTime  @updatedAt
+
+  vulnerability   Vulnerability @relation(fields: [vulnerabilityId], references: [id], onDelete: Cascade)
+
+  @@index([vulnerabilityId])
+  @@map("vulnerability_patches")
+}
+
+// ============================================================
+// COMPLIANCE
+// ============================================================
+
+model ComplianceProfile {
+  id             String              @id @default(dbgenerated("gen_random_uuid()")) @db.Uuid
+  organizationId String              @db.Uuid
+  framework      ComplianceFramework
+  name           String              @db.VarChar(255)
+  description    String?             @db.Text
+  version        String?             @db.VarChar(50)
+  isActive       Boolean             @default(true)
+  scope          Json                @default("{}")
+  config         Json                @default("{}")
+  deletedAt      DateTime?
+  createdAt      DateTime            @default(now())
+  updatedAt      DateTime            @updatedAt
+
+  organization   Organization        @relation(fields: [organizationId], references: [id])
+  controls       ComplianceControl[]
+  assessments    ComplianceAssessment[]
+
+  @@unique([organizationId, framework])
+  @@index([organizationId])
+  @@index([deletedAt])
+  @@map("compliance_profiles")
+}
+
+model ComplianceControl {
+  id                  String            @id @default(dbgenerated("gen_random_uuid()")) @db.Uuid
+  profileId           String            @db.Uuid
+  controlId           String            @db.VarChar(100)
+  title               String            @db.VarChar(500)
+  description         String?           @db.Text
+  category            String?           @db.VarChar(255)
+  requirement         String?           @db.Text
+  guidance            String?           @db.Text
+  testProcedure       String?           @db.Text
+  evidenceRequired    String?           @db.Text
+  automatable         Boolean           @default(false)
+  weight              Float             @default(1.0)
+  parentControlId     String?           @db.VarChar(100)
+  tags                String[]          @default([])
+  createdAt           DateTime          @default(now())
+  updatedAt           DateTime          @updatedAt
+
+  profile             ComplianceProfile @relation(fields: [profileId], references: [id], onDelete: Cascade)
+  results             ComplianceResult[]
+  vulnerabilities     VulnerabilityCompliance[]
+
+  @@unique([profileId, controlId])
+  @@index([profileId])
+  @@map("compliance_controls")
+}
+
+model ComplianceAssessment {
+  id                  String            @id @default(dbgenerated("gen_random_uuid()")) @db.Uuid
+  profileId           String            @db.Uuid
+  name                String            @db.VarChar(255)
+  description         String?           @db.Text
+  assessmentDate      DateTime
+  assessorId          String?           @db.Uuid
+  status              String            @default("in_progress") @db.VarChar(50)
+  overallScore        Float?
+  overallStatus       ComplianceStatus  @default(UNDER_REVIEW)
+  scope               Json              @default("{}")
+  evidencePackage     String?           @db.VarChar(2048)
+  reportUrl           String?           @db.VarChar(2048)
+  nextAssessmentDate  DateTime?
+  completedAt         DateTime?
+  metadata            Json              @default("{}")
+  deletedAt           DateTime?
+  createdAt           DateTime          @default(now())
+  updatedAt           DateTime          @updatedAt
+
+  profile             ComplianceProfile @relation(fields: [profileId], references: [id])
+  results             ComplianceResult[]
+
+  @@index([profileId])
+  @@index([assessmentDate])
+  @@index([deletedAt])
+  @@map("compliance_assessments")
+}
+
+model ComplianceResult {
+  id             String            @id @default(dbgenerated("gen_random_uuid()")) @db.Uuid
+  assessmentId   String            @db.Uuid
+  controlId      String            @db.Uuid
+  status         ComplianceStatus  @default(UNDER_REVIEW)
+  score          Float?
+  notes          String?           @db.Text
+  evidence       Json              @default("[]")
+  findings       Json              @default("[]")
+  remediations   Json              @default("[]")
+  reviewedBy     String?           @db.Uuid
+  reviewedAt     DateTime?
+  createdAt      DateTime          @default(now())
+  updatedAt      DateTime          @updatedAt
+
+  assessment     ComplianceAssessment @relation(fields: [assessmentId], references: [id], onDelete: Cascade)
+  control        ComplianceControl    @relation(fields: [controlId], references: [id])
+
+  @@unique([assessmentId, controlId])
+  @@index([assessmentId])
+  @@index([controlId])
+  @@map("compliance_results")
+}
+
+model VulnerabilityCompliance {
+  vulnerabilityId String @db.Uuid
+  controlId       String @db.Uuid
+  createdAt       DateTime @default(now())
+
+  vulnerability   Vulnerability     @relation(fields: [vulnerabilityId], references: [id], onDelete: Cascade)
+  control         ComplianceControl @relation(fields: [controlId], references: [id], onDelete: Cascade)
+
+  @@id([vulnerabilityId, controlId])
+  @@map("vulnerability_compliance")
+}
+
+// ============================================================
+// RISK MANAGEMENT
+// ============================================================
+
+model RiskProfile {
+  id             String    @id @default(dbgenerated("gen_random_uuid()")) @db.Uuid
+  organizationId String    @db.Uuid
+  name           String    @db.VarChar(255)
+  description    String?   @db.Text
+  riskAppetite   RiskLevel @default(MEDIUM)
+  methodology    String    @default("cvss") @db.VarChar(50)
+  weights        Json      @default("{}")
+  thresholds     Json      @default("{}")
+  isDefault      Boolean   @default(false)
+  deletedAt      DateTime?
+  createdAt      DateTime  @default(now())
+  updatedAt      DateTime  @updatedAt
+
+  organization   Organization @relation(fields: [organizationId], references: [id])
+  riskItems      RiskItem[]
+
+  @@index([organizationId])
+  @@index([deletedAt])
+  @@map("risk_profiles")
+}
+
+model RiskItem {
+  id              String    @id @default(dbgenerated("gen_random_uuid()")) @db.Uuid
+  profileId       String    @db.Uuid
+  name            String    @db.VarChar(500)
+  description     String?   @db.Text
+  category        String    @db.VarChar(100)
+  likelihood      Float
+  impact          Float
+  inherentRisk    Float
+  residualRisk    Float
+  riskLevel       RiskLevel
+  controlsInPlace Json      @default("[]")
+  treatmentPlan   String?   @db.Text
+  treatmentStatus String    @default("open") @db.VarChar(50)
+  owner           String?   @db.Uuid
+  reviewDate      DateTime?
+  acceptedAt      DateTime?
+  acceptedBy      String?   @db.Uuid
+  metadata        Json      @default("{}")
+  deletedAt       DateTime?
+  createdAt       DateTime  @default(now())
+  updatedAt       DateTime  @updatedAt
+
+  profile         RiskProfile @relation(fields: [profileId], references: [id])
+
+  @@index([profileId])
+  @@index([riskLevel])
+  @@index([deletedAt])
+  @@map("risk_items")
+}
+
+// ============================================================
+// THREAT INTELLIGENCE
+// ============================================================
+
+model ThreatIntelFeed {
+  id             String    @id @default(dbgenerated("gen_random_uuid()")) @db.Uuid
+  organizationId String?   @db.Uuid
+  name           String    @db.VarChar(255)
+  provider       String    @db.VarChar(100)
+  feedType       String    @db.VarChar(50)
+  url            String?   @db.VarChar(2048)
+  apiKey         String?   @db.VarChar(255)
+  isActive       Boolean   @default(true)
+  isSystem       Boolean   @default(false)
+  syncFrequency  Int       @default(3600)
+  lastSyncAt     DateTime?
+  nextSyncAt     DateTime?
+  itemCount      Int       @default(0)
+  config         Json      @default("{}")
+  createdAt      DateTime  @default(now())
+  updatedAt      DateTime  @updatedAt
+
+  organization   Organization?     @relation(fields: [organizationId], references: [id])
+  indicators     ThreatIndicator[]
+
+  @@index([organizationId])
+  @@index([isActive])
+  @@index([nextSyncAt])
+  @@map("threat_intel_feeds")
+}
+
+model ThreatIndicator {
+  id            String   @id @default(dbgenerated("gen_random_uuid()")) @db.Uuid
+  feedId        String   @db.Uuid
+  type          String   @db.VarChar(50)
+  value         String   @db.VarChar(2048)
+  confidence    Int      @default(50)
+  severity      String   @default("medium") @db.VarChar(20)
+  tags          String[] @default([])
+  description   String?  @db.Text
+  source        String?  @db.VarChar(255)
+  firstSeenAt   DateTime @default(now())
+  lastSeenAt    DateTime @default(now())
+  expiresAt     DateTime?
+  malwareFamily String?  @db.VarChar(255)
+  attackPattern String?  @db.VarChar(255)
+  mitreId       String?  @db.VarChar(50)
+  metadata      Json     @default("{}")
+  createdAt     DateTime @default(now())
+  updatedAt     DateTime @updatedAt
+
+  feed          ThreatIntelFeed @relation(fields: [feedId], references: [id], onDelete: Cascade)
+
+  @@index([feedId])
+  @@index([type])
+  @@index([value])
+  @@index([severity])
+  @@index([expiresAt])
+  @@map("threat_indicators")
+}
+
+// ============================================================
+// TICKETS
+// ============================================================
+
+model Ticket {
+  id              String         @id @default(dbgenerated("gen_random_uuid()")) @db.Uuid
+  organizationId  String         @db.Uuid
+  ticketNumber    String         @db.VarChar(50)
+  title           String         @db.VarChar(500)
+  description     String         @db.Text
+  status          TicketStatus   @default(OPEN)
+  priority        TicketPriority @default(MEDIUM)
+  severity        VulnerabilitySeverity?
+  createdById     String         @db.Uuid
+  assigneeId      String?        @db.Uuid
+  dueDate         DateTime?
+  resolvedAt      DateTime?
+  closedAt        DateTime?
+  slaDeadline     DateTime?
+  slaBreached     Boolean        @default(false)
+  externalId      String?        @db.VarChar(255)
+  externalSystem  String?        @db.VarChar(100)
+  externalUrl     String?        @db.VarChar(2048)
+  attachments     Json           @default("[]")
+  labels          String[]       @default([])
+  customFields    Json           @default("{}")
+  metadata        Json           @default("{}")
+  version         Int            @default(1)
+  deletedAt       DateTime?
+  createdAt       DateTime       @default(now())
+  updatedAt       DateTime       @updatedAt
+
+  organization    Organization         @relation(fields: [organizationId], references: [id])
+  createdBy       User                 @relation("TicketCreator", fields: [createdById], references: [id])
+  assignee        User?                @relation("TicketAssignee", fields: [assigneeId], references: [id])
+  vulnerabilities TicketVulnerability[]
+  comments        TicketComment[]
+  history         TicketHistory[]
+
+  @@unique([organizationId, ticketNumber])
+  @@index([organizationId])
+  @@index([status])
+  @@index([priority])
+  @@index([assigneeId])
+  @@index([slaDeadline])
+  @@index([deletedAt])
+  @@map("tickets")
+}
+
+model TicketVulnerability {
+  ticketId        String @db.Uuid
+  vulnerabilityId String @db.Uuid
+  createdAt       DateTime @default(now())
+
+  ticket          Ticket        @relation(fields: [ticketId], references: [id], onDelete: Cascade)
+  vulnerability   Vulnerability @relation(fields: [vulnerabilityId], references: [id], onDelete: Cascade)
+
+  @@id([ticketId, vulnerabilityId])
+  @@map("ticket_vulnerabilities")
+}
+
+model TicketComment {
+  id          String    @id @default(dbgenerated("gen_random_uuid()")) @db.Uuid
+  ticketId    String    @db.Uuid
+  userId      String    @db.Uuid
+  content     String    @db.Text
+  isInternal  Boolean   @default(false)
+  attachments Json      @default("[]")
+  deletedAt   DateTime?
+  createdAt   DateTime  @default(now())
+  updatedAt   DateTime  @updatedAt
+
+  ticket      Ticket    @relation(fields: [ticketId], references: [id], onDelete: Cascade)
+
+  @@index([ticketId])
+  @@index([userId])
+  @@map("ticket_comments")
+}
+
+model TicketHistory {
+  id        String   @id @default(dbgenerated("gen_random_uuid()")) @db.Uuid
+  ticketId  String   @db.Uuid
+  changes   Json
+  changedBy String?  @db.Uuid
+  version   Int
+  createdAt DateTime @default(now())
+
+  ticket    Ticket   @relation(fields: [ticketId], references: [id], onDelete: Cascade)
+
+  @@index([ticketId])
+  @@map("ticket_history")
+}
+
+// ============================================================
+// REPORTING
+// ============================================================
+
+model Report {
+  id             String       @id @default(dbgenerated("gen_random_uuid()")) @db.Uuid
+  organizationId String       @db.Uuid
+  generatedById  String       @db.Uuid
+  title          String       @db.VarChar(500)
+  description    String?      @db.Text
+  reportType     ReportType
+  format         ReportFormat
+  status         ReportStatus @default(GENERATING)
+  templateId     String?      @db.Uuid
+  config         Json         @default("{}")
+  filters        Json         @default("{}")
+  dateFrom       DateTime?
+  dateTo         DateTime?
+  fileUrl        String?      @db.VarChar(2048)
+  fileSize       BigInt?
+  pageCount      Int?
+  errorMessage   String?      @db.Text
+  expiresAt      DateTime?
+  downloadCount  Int          @default(0)
+  isScheduled    Boolean      @default(false)
+  aiSummary      String?      @db.Text
+  metadata       Json         @default("{}")
+  deletedAt      DateTime?
+  createdAt      DateTime     @default(now())
+  updatedAt      DateTime     @updatedAt
+
+  organization   Organization  @relation(fields: [organizationId], references: [id])
+  generatedBy    User          @relation(fields: [generatedById], references: [id])
+  template       ReportTemplate? @relation(fields: [templateId], references: [id])
+  scans          ReportScan[]
+
+  @@index([organizationId])
+  @@index([status])
+  @@index([reportType])
+  @@index([deletedAt])
+  @@map("reports")
+}
+
+model ReportScan {
+  reportId  String @db.Uuid
+  scanId    String @db.Uuid
+
+  report    Report @relation(fields: [reportId], references: [id], onDelete: Cascade)
+  scan      Scan   @relation(fields: [scanId], references: [id], onDelete: Cascade)
+
+  @@id([reportId, scanId])
+  @@map("report_scans")
+}
+
+model ReportTemplate {
+  id          String     @id @default(dbgenerated("gen_random_uuid()")) @db.Uuid
+  name        String     @db.VarChar(255)
+  description String?    @db.Text
+  reportType  ReportType
+  format      ReportFormat
+  template    String     @db.Text
+  variables   Json       @default("[]")
+  isSystem    Boolean    @default(false)
+  isActive    Boolean    @default(true)
+  deletedAt   DateTime?
+  createdAt   DateTime   @default(now())
+  updatedAt   DateTime   @updatedAt
+
+  reports     Report[]
+
+  @@index([reportType])
+  @@index([deletedAt])
+  @@map("report_templates")
+}
+
+// ============================================================
+// AI & COPILOT
+// ============================================================
+
+model AIConversation {
+  id             String      @id @default(dbgenerated("gen_random_uuid()")) @db.Uuid
+  organizationId String      @db.Uuid
+  userId         String      @db.Uuid
+  title          String?     @db.VarChar(500)
+  context        String?     @db.VarChar(100)
+  contextId      String?     @db.Uuid
+  provider       AIProvider  @default(OPENAI)
+  model          String      @db.VarChar(100)
+  systemPrompt   String?     @db.Text
+  tokenCount     Int         @default(0)
+  inputTokens    Int         @default(0)
+  outputTokens   Int         @default(0)
+  cost           Float       @default(0)
+  metadata       Json        @default("{}")
+  archivedAt     DateTime?
+  deletedAt      DateTime?
+  createdAt      DateTime    @default(now())
+  updatedAt      DateTime    @updatedAt
+
+  organization   Organization  @relation(fields: [organizationId], references: [id])
+  user           User          @relation(fields: [userId], references: [id])
+  messages       AIMessage[]
+
+  @@index([organizationId])
+  @@index([userId])
+  @@index([context])
+  @@index([deletedAt])
+  @@map("ai_conversations")
+}
+
+model AIMessage {
+  id              String   @id @default(dbgenerated("gen_random_uuid()")) @db.Uuid
+  conversationId  String   @db.Uuid
+  role            String   @db.VarChar(20)
+  content         String   @db.Text
+  toolCalls       Json?
+  toolResults     Json?
+  inputTokens     Int      @default(0)
+  outputTokens    Int      @default(0)
+  cost            Float    @default(0)
+  latencyMs       Int?
+  model           String?  @db.VarChar(100)
+  provider        String?  @db.VarChar(50)
+  promptVersion   String?  @db.VarChar(50)
+  metadata        Json     @default("{}")
+  createdAt       DateTime @default(now())
+
+  conversation    AIConversation @relation(fields: [conversationId], references: [id], onDelete: Cascade)
+
+  @@index([conversationId])
+  @@index([createdAt])
+  @@map("ai_messages")
+}
+
+model AIPromptTemplate {
+  id          String   @id @default(dbgenerated("gen_random_uuid()")) @db.Uuid
+  name        String   @unique @db.VarChar(255)
+  description String?  @db.Text
+  category    String   @db.VarChar(100)
+  template    String   @db.Text
+  variables   Json     @default("[]")
+  version     String   @default("1.0.0") @db.VarChar(20)
+  isActive    Boolean  @default(true)
+  isSystem    Boolean  @default(false)
+  model       String?  @db.VarChar(100)
+  maxTokens   Int?
+  temperature Float?
+  metadata    Json     @default("{}")
+  createdAt   DateTime @default(now())
+  updatedAt   DateTime @updatedAt
+
+  @@index([category])
+  @@index([isActive])
+  @@map("ai_prompt_templates")
+}
+
+model AIEmbedding {
+  id         String                      @id @default(dbgenerated("gen_random_uuid()")) @db.Uuid
+  entityType String                      @db.VarChar(50)
+  entityId   String                      @db.Uuid
+  content    String                      @db.Text
+  embedding  Unsupported("vector(1536)")?
+  model      String                      @db.VarChar(100)
+  chunkIndex Int                         @default(0)
+  metadata   Json                        @default("{}")
+  createdAt  DateTime                    @default(now())
+  updatedAt  DateTime                    @updatedAt
+
+  @@index([entityType])
+  @@index([entityId])
+  @@map("ai_embeddings")
+}
+
+model AIModelConfig {
+  id             String     @id @default(dbgenerated("gen_random_uuid()")) @db.Uuid
+  provider       AIProvider
+  modelId        String     @db.VarChar(100)
+  displayName    String     @db.VarChar(255)
+  contextWindow  Int
+  inputCostPer1k Float
+  outputCostPer1k Float
+  maxTokens      Int
+  supportsVision Boolean    @default(false)
+  supportsFunctions Boolean @default(false)
+  isActive       Boolean    @default(true)
+  isDefault      Boolean    @default(false)
+  capabilities   String[]   @default([])
+  config         Json       @default("{}")
+  createdAt      DateTime   @default(now())
+  updatedAt      DateTime   @updatedAt
+
+  @@unique([provider, modelId])
+  @@index([provider])
+  @@index([isActive])
+  @@map("ai_model_configs")
+}
+
+// ============================================================
+// NOTIFICATIONS
+// ============================================================
+
+model NotificationPreference {
+  id             String              @id @default(dbgenerated("gen_random_uuid()")) @db.Uuid
+  userId         String              @db.Uuid
+  organizationId String              @db.Uuid
+  channel        NotificationChannel
+  eventType      String              @db.VarChar(100)
+  isEnabled      Boolean             @default(true)
+  config         Json                @default("{}")
+  createdAt      DateTime            @default(now())
+  updatedAt      DateTime            @updatedAt
+
+  user           User                @relation(fields: [userId], references: [id], onDelete: Cascade)
+
+  @@unique([userId, organizationId, channel, eventType])
+  @@index([userId])
+  @@index([organizationId])
+  @@map("notification_preferences")
+}
+
+model Notification {
+  id             String               @id @default(dbgenerated("gen_random_uuid()")) @db.Uuid
+  organizationId String               @db.Uuid
+  userId         String?              @db.Uuid
+  channel        NotificationChannel  @default(IN_APP)
+  severity       NotificationSeverity @default(INFO)
+  status         NotificationStatus   @default(PENDING)
+  title          String               @db.VarChar(500)
+  message        String               @db.Text
+  eventType      String               @db.VarChar(100)
+  entityType     String?              @db.VarChar(50)
+  entityId       String?              @db.Uuid
+  actionUrl      String?              @db.VarChar(2048)
+  data           Json                 @default("{}")
+  readAt         DateTime?
+  sentAt         DateTime?
+  deliveredAt    DateTime?
+  failedAt       DateTime?
+  errorMessage   String?              @db.VarChar(500)
+  expiresAt      DateTime?
+  createdAt      DateTime             @default(now())
+  updatedAt      DateTime             @updatedAt
+
+  organization   Organization         @relation(fields: [organizationId], references: [id])
+
+  @@index([organizationId])
+  @@index([userId])
+  @@index([status])
+  @@index([channel])
+  @@index([eventType])
+  @@index([createdAt])
+  @@map("notifications")
+}
+
+model Webhook {
+  id             String    @id @default(dbgenerated("gen_random_uuid()")) @db.Uuid
+  organizationId String    @db.Uuid
+  name           String    @db.VarChar(255)
+  url            String    @db.VarChar(2048)
+  secret         String?   @db.VarChar(255)
+  events         String[]  @default([])
+  headers        Json      @default("{}")
+  isActive       Boolean   @default(true)
+  lastTriggeredAt DateTime?
+  lastStatusCode  Int?
+  failureCount   Int       @default(0)
+  successCount   Int       @default(0)
+  timeout        Int       @default(30)
+  retryCount     Int       @default(3)
+  deletedAt      DateTime?
+  createdAt      DateTime  @default(now())
+  updatedAt      DateTime  @updatedAt
+
+  organization   Organization      @relation(fields: [organizationId], references: [id])
+  deliveries     WebhookDelivery[]
+
+  @@index([organizationId])
+  @@index([isActive])
+  @@index([deletedAt])
+  @@map("webhooks")
+}
+
+model WebhookDelivery {
+  id            String    @id @default(dbgenerated("gen_random_uuid()")) @db.Uuid
+  webhookId     String    @db.Uuid
+  eventType     String    @db.VarChar(100)
+  payload       Json
+  statusCode    Int?
+  responseBody  String?   @db.Text
+  duration      Int?
+  success       Boolean   @default(false)
+  errorMessage  String?   @db.VarChar(500)
+  attempt       Int       @default(1)
+  createdAt     DateTime  @default(now())
+
+  webhook       Webhook   @relation(fields: [webhookId], references: [id], onDelete: Cascade)
+
+  @@index([webhookId])
+  @@index([success])
+  @@index([createdAt])
+  @@map("webhook_deliveries")
+}
+
+// ============================================================
+// INTEGRATIONS
+// ============================================================
+
+model Integration {
+  id             String            @id @default(dbgenerated("gen_random_uuid()")) @db.Uuid
+  organizationId String            @db.Uuid
+  name           String            @db.VarChar(255)
+  type           String            @db.VarChar(100)
+  provider       String            @db.VarChar(100)
+  status         IntegrationStatus @default(PENDING_SETUP)
+  config         Json              @default("{}")
+  credentials    Json?
+  lastSyncAt     DateTime?
+  nextSyncAt     DateTime?
+  syncEnabled    Boolean           @default(true)
+  errorMessage   String?           @db.VarChar(500)
+  metadata       Json              @default("{}")
+  deletedAt      DateTime?
+  createdAt      DateTime          @default(now())
+  updatedAt      DateTime          @updatedAt
+
+  organization   Organization      @relation(fields: [organizationId], references: [id])
+
+  @@index([organizationId])
+  @@index([type])
+  @@index([status])
+  @@index([deletedAt])
+  @@map("integrations")
+}
+
+model CloudConnection {
+  id              String        @id @default(dbgenerated("gen_random_uuid()")) @db.Uuid
+  organizationId  String        @db.Uuid
+  name            String        @db.VarChar(255)
+  provider        CloudProvider
+  accountId       String?       @db.VarChar(255)
+  region          String?       @db.VarChar(100)
+  credentials     Json?
+  roleArn         String?       @db.VarChar(500)
+  externalId      String?       @db.VarChar(255)
+  regions         String[]      @default([])
+  services        String[]      @default([])
+  status          String        @default("active") @db.VarChar(50)
+  lastSyncAt      DateTime?
+  assetCount      Int           @default(0)
+  metadata        Json          @default("{}")
+  deletedAt       DateTime?
+  createdAt       DateTime      @default(now())
+  updatedAt       DateTime      @updatedAt
+
+  organization    Organization  @relation(fields: [organizationId], references: [id])
+
+  @@index([organizationId])
+  @@index([provider])
+  @@index([deletedAt])
+  @@map("cloud_connections")
+}
+
+// ============================================================
+// BILLING & SUBSCRIPTIONS
+// ============================================================
+
+model Subscription {
+  id                    String             @id @default(dbgenerated("gen_random_uuid()")) @db.Uuid
+  organizationId        String             @unique @db.Uuid
+  planId                String             @db.Uuid
+  status                SubscriptionStatus @default(TRIALING)
+  billingInterval       BillingInterval    @default(MONTHLY)
+  currentPeriodStart    DateTime
+  currentPeriodEnd      DateTime
+  trialStart            DateTime?
+  trialEnd              DateTime?
+  cancelAt              DateTime?
+  cancelledAt           DateTime?
+  endedAt               DateTime?
+  stripeCustomerId      String?            @unique @db.VarChar(255)
+  stripeSubscriptionId  String?            @unique @db.VarChar(255)
+  stripePaymentMethodId String?            @db.VarChar(255)
+  quantity              Int                @default(1)
+  unitAmount            Int                @default(0)
+  currency              String             @default("USD") @db.VarChar(3)
+  discount              Float              @default(0)
+  metadata              Json               @default("{}")
+  createdAt             DateTime           @default(now())
+  updatedAt             DateTime           @updatedAt
+
+  organization          Organization       @relation(fields: [organizationId], references: [id])
+  plan                  SubscriptionPlan   @relation(fields: [planId], references: [id])
+  invoices              Invoice[]
+  usageRecords          UsageRecord[]
+
+  @@index([organizationId])
+  @@index([status])
+  @@index([stripeCustomerId])
+  @@map("subscriptions")
+}
+
+model SubscriptionPlan {
+  id             String          @id @default(dbgenerated("gen_random_uuid()")) @db.Uuid
+  name           String          @unique @db.VarChar(100)
+  displayName    String          @db.VarChar(255)
+  description    String?         @db.Text
+  tier           OrgTier
+  monthlyPrice   Int             @default(0)
+  annualPrice    Int             @default(0)
+  currency       String          @default("USD") @db.VarChar(3)
+  stripePriceIdMonthly String?   @db.VarChar(255)
+  stripePriceIdAnnual  String?   @db.VarChar(255)
+  features       Json            @default("{}")
+  limits         Json            @default("{}")
+  isActive       Boolean         @default(true)
+  isPublic       Boolean         @default(true)
+  sortOrder      Int             @default(0)
+  trialDays      Int             @default(14)
+  metadata       Json            @default("{}")
+  createdAt      DateTime        @default(now())
+  updatedAt      DateTime        @updatedAt
+
+  subscriptions  Subscription[]
+
+  @@index([tier])
+  @@index([isActive])
+  @@map("subscription_plans")
+}
+
+model Invoice {
+  id                String    @id @default(dbgenerated("gen_random_uuid()")) @db.Uuid
+  subscriptionId    String    @db.Uuid
+  stripeInvoiceId   String?   @unique @db.VarChar(255)
+  number            String    @db.VarChar(50)
+  status            String    @db.VarChar(50)
+  amount            Int
+  amountDue         Int
+  amountPaid        Int
+  currency          String    @default("USD") @db.VarChar(3)
+  dueDate           DateTime?
+  paidAt            DateTime?
+  invoiceUrl        String?   @db.VarChar(2048)
+  invoicePdfUrl     String?   @db.VarChar(2048)
+  lineItems         Json      @default("[]")
+  periodStart       DateTime
+  periodEnd         DateTime
+  metadata          Json      @default("{}")
+  createdAt         DateTime  @default(now())
+  updatedAt         DateTime  @updatedAt
+
+  subscription      Subscription @relation(fields: [subscriptionId], references: [id])
+
+  @@index([subscriptionId])
+  @@index([status])
+  @@map("invoices")
+}
+
+model UsageRecord {
+  id             String    @id @default(dbgenerated("gen_random_uuid()")) @db.Uuid
+  subscriptionId String    @db.Uuid
+  metric         String    @db.VarChar(100)
+  quantity       Int
+  periodStart    DateTime
+  periodEnd      DateTime
+  metadata       Json      @default("{}")
+  createdAt      DateTime  @default(now())
+
+  subscription   Subscription @relation(fields: [subscriptionId], references: [id])
+
+  @@index([subscriptionId])
+  @@index([metric])
+  @@index([periodStart])
+  @@map("usage_records")
+}
+
+// ============================================================
+// MARKETPLACE & PLUGINS
+// ============================================================
+
+model Plugin {
+  id             String       @id @default(dbgenerated("gen_random_uuid()")) @db.Uuid
+  slug           String       @unique @db.VarChar(100)
+  name           String       @db.VarChar(255)
+  description    String       @db.Text
+  shortDesc      String       @db.VarChar(500)
+  version        String       @db.VarChar(50)
+  category       String       @db.VarChar(100)
+  tags           String[]     @default([])
+  authorId       String?      @db.Uuid
+  authorName     String       @db.VarChar(255)
+  authorUrl      String?      @db.VarChar(2048)
+  homepage       String?      @db.VarChar(2048)
+  repository     String?      @db.VarChar(2048)
+  documentation  String?      @db.VarChar(2048)
+  iconUrl        String?      @db.VarChar(2048)
+  screenshots    Json         @default("[]")
+  permissions    String[]     @default([])
+  entryPoint     String       @db.VarChar(500)
+  status         PluginStatus @default(PENDING_REVIEW)
+  isOfficial     Boolean      @default(false)
+  isFree         Boolean      @default(true)
+  price          Int          @default(0)
+  downloads      Int          @default(0)
+  rating         Float?
+  ratingCount    Int          @default(0)
+  schemaVersion  String       @default("1.0") @db.VarChar(20)
+  minAppVersion  String?      @db.VarChar(20)
+  maxAppVersion  String?      @db.VarChar(20)
+  changelog      Json         @default("[]")
+  metadata       Json         @default("{}")
+  deletedAt      DateTime?
+  publishedAt    DateTime?
+  createdAt      DateTime     @default(now())
+  updatedAt      DateTime     @updatedAt
+
+  installations  PluginInstallation[]
+
+  @@index([status])
+  @@index([category])
+  @@index([isOfficial])
+  @@index([deletedAt])
+  @@map("plugins")
+}
+
+model PluginInstallation {
+  id             String    @id @default(dbgenerated("gen_random_uuid()")) @db.Uuid
+  organizationId String    @db.Uuid
+  pluginId       String    @db.Uuid
+  version        String    @db.VarChar(50)
+  isActive       Boolean   @default(true)
+  config         Json      @default("{}")
+  installedBy    String?   @db.Uuid
+  installedAt    DateTime  @default(now())
+  updatedAt      DateTime  @updatedAt
+
+  organization   Organization @relation(fields: [organizationId], references: [id])
+  plugin         Plugin       @relation(fields: [pluginId], references: [id])
+
+  @@unique([organizationId, pluginId])
+  @@index([organizationId])
+  @@index([pluginId])
+  @@map("plugin_installations")
+}
+
+// ============================================================
+// DASHBOARDS
+// ============================================================
+
+model Dashboard {
+  id             String    @id @default(dbgenerated("gen_random_uuid()")) @db.Uuid
+  organizationId String    @db.Uuid
+  userId         String?   @db.Uuid
+  name           String    @db.VarChar(255)
+  description    String?   @db.Text
+  isDefault      Boolean   @default(false)
+  isShared       Boolean   @default(false)
+  layout         Json      @default("[]")
+  widgets        Json      @default("[]")
+  filters        Json      @default("{}")
+  refreshInterval Int?
+  deletedAt      DateTime?
+  createdAt      DateTime  @default(now())
+  updatedAt      DateTime  @updatedAt
+
+  organization   Organization @relation(fields: [organizationId], references: [id])
+  user           User?        @relation(fields: [userId], references: [id])
+
+  @@index([organizationId])
+  @@index([userId])
+  @@index([deletedAt])
+  @@map("dashboards")
+}
+
+// ============================================================
+// AUDIT LOGGING
+// ============================================================
+
+model AuditLog {
+  id             String      @id @default(dbgenerated("gen_random_uuid()")) @db.Uuid
+  organizationId String?     @db.Uuid
+  userId         String?     @db.Uuid
+  action         AuditAction
+  entityType     String?     @db.VarChar(50)
+  entityId       String?     @db.VarChar(255)
+  changes        Json?
+  metadata       Json        @default("{}")
+  ipAddress      String?     @db.VarChar(50)
+  userAgent      String?     @db.VarChar(512)
+  sessionId      String?     @db.Uuid
+  requestId      String?     @db.VarChar(255)
+  success        Boolean     @default(true)
+  errorMessage   String?     @db.VarChar(500)
+  duration       Int?
+  createdAt      DateTime    @default(now())
+
+  organization   Organization? @relation(fields: [organizationId], references: [id])
+  user           User?         @relation(fields: [userId], references: [id])
+
+  @@index([organizationId])
+  @@index([userId])
+  @@index([action])
+  @@index([entityType, entityId])
+  @@index([createdAt])
+  @@map("audit_logs")
+}
+
+// ============================================================
+// SYSTEM SETTINGS
+// ============================================================
+
+model SystemSetting {
+  id          String   @id @default(dbgenerated("gen_random_uuid()")) @db.Uuid
+  key         String   @unique @db.VarChar(255)
+  value       Json
+  description String?  @db.VarChar(500)
+  isPublic    Boolean  @default(false)
+  isEncrypted Boolean  @default(false)
+  updatedBy   String?  @db.Uuid
+  createdAt   DateTime @default(now())
+  updatedAt   DateTime @updatedAt
+
+  @@index([key])
+  @@map("system_settings")
+}
+
+model SystemEvent {
+  id        String   @id @default(dbgenerated("gen_random_uuid()")) @db.Uuid
+  type      String   @db.VarChar(100)
+  severity  String   @db.VarChar(20)
+  message   String   @db.VarChar(1000)
+  data      Json?
+  source    String?  @db.VarChar(100)
+  resolved  Boolean  @default(false)
+  createdAt DateTime @default(now())
+
+  @@index([type])
+  @@index([severity])
+  @@index([resolved])
+  @@index([createdAt])
+  @@map("system_events")
+}
+
+model FeatureFlag {
+  id             String   @id @default(dbgenerated("gen_random_uuid()")) @db.Uuid
+  key            String   @unique @db.VarChar(100)
+  name           String   @db.VarChar(255)
+  description    String?  @db.VarChar(500)
+  isEnabled      Boolean  @default(false)
+  rolloutPercent Int      @default(0)
+  conditions     Json     @default("{}")
+  metadata       Json     @default("{}")
+  createdAt      DateTime @default(now())
+  updatedAt      DateTime @updatedAt
+
+  @@index([key])
+  @@map("feature_flags")
+}
