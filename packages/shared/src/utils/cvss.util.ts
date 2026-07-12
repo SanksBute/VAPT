@@ -1,25 +1,25 @@
 import { getCvssV3Severity } from '../constants/cvss';
 
-export { getCvssV3Severity };
-
-export function parseCvssV3Vector(vector: string): Record<string, string> {
+export function parseCvssV3Vector(vector: string): Map<string, string> {
   const parts = vector.split('/');
-  const result: Record<string, string> = {};
+  const result = new Map<string, string>();
 
   for (const part of parts) {
     const colonIndex = part.indexOf(':');
-    if (colonIndex === -1) continue;
+    if (colonIndex === -1) {
+      continue;
+    }
     const key = part.substring(0, colonIndex);
     const value = part.substring(colonIndex + 1);
-    if (key !== undefined && value !== undefined) {
-      result[key] = value;
-    }
+    result.set(key, value);
   }
   return result;
 }
 
 export function formatCvssScore(score: number | null | undefined): string {
-  if (score === null || score === undefined) return 'N/A';
+  if (score === null || score === undefined) {
+    return 'N/A';
+  }
   return score.toFixed(1);
 }
 
@@ -32,35 +32,74 @@ export function calculateBaseScore(vector: string): number | null {
   // Simplified CVSS 3.1 base score calculation
   const parts = parseCvssV3Vector(vector);
 
-  const AV = { N: 0.85, A: 0.62, L: 0.55, P: 0.2 };
-  const AC = { L: 0.77, H: 0.44 };
-  const PR: Record<string, Record<string, number>> = {
-    CHANGED: { N: 0.85, L: 0.68, H: 0.5 },
-    UNCHANGED: { N: 0.85, L: 0.62, H: 0.27 },
-  };
-  const UI = { N: 0.85, R: 0.62 };
-  const CIA = { N: 0, L: 0.22, H: 0.56 };
+  const AV = new Map([
+    ['N', 0.85],
+    ['A', 0.62],
+    ['L', 0.55],
+    ['P', 0.2],
+  ]);
+  const AC = new Map([
+    ['L', 0.77],
+    ['H', 0.44],
+  ]);
+  const PR_CHANGED = new Map([
+    ['N', 0.85],
+    ['L', 0.68],
+    ['H', 0.5],
+  ]);
+  const PR_UNCHANGED = new Map([
+    ['N', 0.85],
+    ['L', 0.62],
+    ['H', 0.27],
+  ]);
+  const UI = new Map([
+    ['N', 0.85],
+    ['R', 0.62],
+  ]);
+  const CIA = new Map([
+    ['N', 0],
+    ['L', 0.22],
+    ['H', 0.56],
+  ]);
 
-  const scope = parts['S'] ?? 'U';
-  const avKey = parts['AV'] as keyof typeof AV;
-  const acKey = parts['AC'] as keyof typeof AC;
-  const prKey = parts['PR'] as string;
-  const uiKey = parts['UI'] as keyof typeof UI;
-  const cKey = parts['C'] as keyof typeof CIA;
-  const iKey = parts['I'] as keyof typeof CIA;
-  const aKey = parts['A'] as keyof typeof CIA;
+  const scope = parts.get('S') ?? 'U';
+  const avKey = parts.get('AV');
+  const acKey = parts.get('AC');
+  const prKey = parts.get('PR');
+  const uiKey = parts.get('UI');
+  const cKey = parts.get('C');
+  const iKey = parts.get('I');
+  const aKey = parts.get('A');
 
-  if (!avKey || !acKey || !prKey || !uiKey || !cKey || !iKey || !aKey) return null;
+  if (
+    avKey === undefined ||
+    acKey === undefined ||
+    prKey === undefined ||
+    uiKey === undefined ||
+    cKey === undefined ||
+    iKey === undefined ||
+    aKey === undefined
+  ) {
+    return null;
+  }
 
-  const avVal = AV[avKey];
-  const acVal = AC[acKey];
-  const prVal = scope === 'C' ? PR['CHANGED']?.[prKey] : PR['UNCHANGED']?.[prKey];
-  const uiVal = UI[uiKey];
-  const cVal = CIA[cKey];
-  const iVal = CIA[iKey];
-  const aVal = CIA[aKey];
+  const avVal = AV.get(avKey);
+  const acVal = AC.get(acKey);
+  const prVal = scope === 'C' ? PR_CHANGED.get(prKey) : PR_UNCHANGED.get(prKey);
+  const uiVal = UI.get(uiKey);
+  const cVal = CIA.get(cKey);
+  const iVal = CIA.get(iKey);
+  const aVal = CIA.get(aKey);
 
-  if (avVal === undefined || acVal === undefined || prVal === undefined || uiVal === undefined || cVal === undefined || iVal === undefined || aVal === undefined) {
+  if (
+    avVal === undefined ||
+    acVal === undefined ||
+    prVal === undefined ||
+    uiVal === undefined ||
+    cVal === undefined ||
+    iVal === undefined ||
+    aVal === undefined
+  ) {
     return null;
   }
 
@@ -74,14 +113,11 @@ export function calculateBaseScore(vector: string): number | null {
     isc = 7.52 * (iscBase - 0.029) - 3.25 * Math.pow(iscBase - 0.02, 15);
   }
 
-  if (isc <= 0) return 0;
-
-  let baseScore: number;
-  if (scope === 'U') {
-    baseScore = Math.min(10, 1.08 * (isc + exploitability));
-  } else {
-    baseScore = Math.min(10, 1.08 * (isc + exploitability));
+  if (isc <= 0) {
+    return 0;
   }
+
+  const baseScore = Math.min(10, 1.08 * (isc + exploitability));
 
   return Math.round(baseScore * 10) / 10;
 }

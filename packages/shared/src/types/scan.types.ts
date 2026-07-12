@@ -1,6 +1,48 @@
-export type ScanStatusType = 'PENDING' | 'QUEUED' | 'INITIALIZING' | 'RUNNING' | 'PAUSED' | 'COMPLETED' | 'FAILED' | 'CANCELLED' | 'PARTIAL' | 'TIMEOUT';
-export type ScanTypeValue = 'DISCOVERY' | 'PORT_SCAN' | 'VULNERABILITY_ASSESSMENT' | 'WEB_APPLICATION' | 'API_SECURITY' | 'CLOUD_SECURITY' | 'CONTAINER_SECURITY' | 'KUBERNETES_SECURITY' | 'AD_SECURITY' | 'CODE_ANALYSIS' | 'SECRET_DETECTION' | 'PENETRATION_TEST' | 'COMPLIANCE' | 'THREAT_INTEL' | 'FULL';
-export type ScannerTypeValue = 'NMAP' | 'MASSCAN' | 'RUSTSCAN' | 'OPENVAS' | 'ZAP' | 'NIKTO' | 'SQLMAP' | 'NUCLEI' | 'TRIVY' | 'SCOUTSUITE' | 'PROWLER' | 'SEMGREP' | 'MOBSF' | 'LYNIS' | 'OSQUERY' | 'FALCO' | 'CUSTOM';
+export type ScanStatusType =
+  | 'PENDING'
+  | 'QUEUED'
+  | 'INITIALIZING'
+  | 'RUNNING'
+  | 'PAUSED'
+  | 'COMPLETED'
+  | 'FAILED'
+  | 'CANCELLED'
+  | 'PARTIAL'
+  | 'TIMEOUT';
+export type ScanTypeValue =
+  | 'DISCOVERY'
+  | 'PORT_SCAN'
+  | 'VULNERABILITY_ASSESSMENT'
+  | 'WEB_APPLICATION'
+  | 'API_SECURITY'
+  | 'CLOUD_SECURITY'
+  | 'CONTAINER_SECURITY'
+  | 'KUBERNETES_SECURITY'
+  | 'AD_SECURITY'
+  | 'CODE_ANALYSIS'
+  | 'SECRET_DETECTION'
+  | 'PENETRATION_TEST'
+  | 'COMPLIANCE'
+  | 'THREAT_INTEL'
+  | 'FULL';
+export type ScannerTypeValue =
+  | 'NMAP'
+  | 'MASSCAN'
+  | 'RUSTSCAN'
+  | 'OPENVAS'
+  | 'ZAP'
+  | 'NIKTO'
+  | 'SQLMAP'
+  | 'NUCLEI'
+  | 'TRIVY'
+  | 'SCOUTSUITE'
+  | 'PROWLER'
+  | 'SEMGREP'
+  | 'MOBSF'
+  | 'LYNIS'
+  | 'OSQUERY'
+  | 'FALCO'
+  | 'CUSTOM';
 
 export interface ScanConfiguration {
   ports?: string;
@@ -98,6 +140,8 @@ export interface NormalizedFinding {
   title: string;
   description: string;
   severity: 'CRITICAL' | 'HIGH' | 'MEDIUM' | 'LOW' | 'INFORMATIONAL';
+  /** Marks a finding produced by the demo-mode simulator rather than a real scanner run. */
+  source?: 'REAL' | 'SIMULATED';
   target: string;
   port?: number;
   protocol?: string;

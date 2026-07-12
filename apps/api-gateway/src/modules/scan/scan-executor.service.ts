@@ -1,15 +1,25 @@
-import { Injectable, OnModuleInit } from '@nestjs/common';
-import { InjectPinoLogger, PinoLogger } from 'nestjs-pino';
-import { ScanStatus } from '@prisma/client';
-import type { IScanner, ScannerContext, ScannerTargetType } from '@sentinelx/scanner-sdk';
-import { NmapParser, NucleiParser } from '@sentinelx/scanner-sdk';
-import type { NormalizedFinding } from '@sentinelx/shared';
-import { QUEUES } from '@sentinelx/shared';
+import * as fs from 'fs/promises';
 import * as os from 'os';
 import * as path from 'path';
-import * as fs from 'fs/promises';
+
+import { Injectable, OnModuleInit } from '@nestjs/common';
+import { ConfigService } from '@nestjs/config';
+import { ScanStatus } from '@prisma/client';
+import type { IScanner, ScannerContext, ScannerTargetType } from '@sentinelx/scanner-sdk';
+import {
+  NmapParser,
+  NucleiParser,
+  SemgrepParser,
+  TrivyParser,
+  ZapParser,
+} from '@sentinelx/scanner-sdk';
+import type { NormalizedFinding } from '@sentinelx/shared';
+import { QUEUES } from '@sentinelx/shared';
+import { InjectPinoLogger, PinoLogger } from 'nestjs-pino';
+
 import { PrismaService } from '../database/prisma.service';
 import { QueueService } from '../queue/queue.service';
+
 import { ScanProgressGateway } from './scan-progress.gateway';
 import { simulateFindings } from './scan-simulator';
 
@@ -17,9 +27,10 @@ const sleep = (ms: number): Promise<void> => new Promise((r) => setTimeout(r, ms
 
 /**
  * Hard cap (seconds) on how long a real scanner binary may run before we abandon
- * it and fall back to simulation. Real tools like nuclei only report progress at
- * the very start and end, so without a cap a slow scan against a live target
- * appears frozen indefinitely.
+ * it. Real tools like nuclei only report progress at the very start and end, so
+ * without a cap a slow scan against a live target appears frozen indefinitely.
+ * Exceeding this cap fails the job (or falls back to simulation in DEMO_MODE) —
+ * it never silently reports COMPLETED.
  */
 const MAX_REAL_SCAN_SECONDS = 120;
 
@@ -43,6 +54,8 @@ interface ScanResultMessage {
   success: boolean;
   errorMessage?: string;
   statistics: Record<string, unknown>;
+  /** True when `findings` came from the DEMO_MODE simulator, not a real scan. */
+  demoMode?: boolean;
 }
 
 @Injectable()
@@ -50,6 +63,9 @@ export class ScanExecutorService implements OnModuleInit {
   private readonly scanners = new Map<string, IScanner>([
     ['NMAP', new NmapParser()],
     ['NUCLEI', new NucleiParser()],
+    ['ZAP', new ZapParser()],
+    ['TRIVY', new TrivyParser()],
+    ['SEMGREP', new SemgrepParser()],
   ]);
 
   constructor(
@@ -58,7 +74,12 @@ export class ScanExecutorService implements OnModuleInit {
     private readonly prisma: PrismaService,
     private readonly queue: QueueService,
     private readonly gateway: ScanProgressGateway,
+    private readonly config: ConfigService,
   ) {}
+
+  private isDemoMode(): boolean {
+    return this.config.get<boolean>('app.demoMode') ?? false;
+  }
 
   async onModuleInit(): Promise<void> {
     await this.queue.consume<ScanJobDispatch>(QUEUES.SCAN_JOBS, async (message) => {
@@ -70,6 +91,7 @@ export class ScanExecutorService implements OnModuleInit {
 
   private async executeJob(job: ScanJobDispatch): Promise<void> {
     const scanner = this.scanners.get(job.scanner);
+    const demoMode = this.isDemoMode();
 
     await this.prisma.scannerJob.update({
       where: { id: job.jobId },
@@ -78,17 +100,36 @@ export class ScanExecutorService implements OnModuleInit {
 
     await this.markScanStarted(job.scanId);
 
-    // No real scanner implementation registered for this type → simulate.
+    // No real scanner implementation registered for this type.
     if (!scanner) {
-      const findings = await this.runSimulated(job);
+      if (demoMode) {
+        const findings = await this.runSimulated(job);
+        await this.publishResult({
+          scanId: job.scanId,
+          jobId: job.jobId,
+          scanner: job.scanner,
+          organizationId: job.organizationId,
+          findings,
+          success: true,
+          statistics: this.buildStatistics(findings),
+          demoMode: true,
+        });
+        return;
+      }
+
+      this.logger.error(
+        { jobId: job.jobId, scanner: job.scanner },
+        'No scanner implementation registered',
+      );
       await this.publishResult({
         scanId: job.scanId,
         jobId: job.jobId,
         scanner: job.scanner,
         organizationId: job.organizationId,
-        findings,
-        success: true,
-        statistics: this.buildStatistics(findings),
+        findings: [],
+        success: false,
+        errorMessage: `Scanner ${job.scanner} is not implemented`,
+        statistics: { totalFindings: 0 },
       });
       return;
     }
@@ -113,8 +154,9 @@ export class ScanExecutorService implements OnModuleInit {
       onProgress: async (progress, message) => {
         await this.updateProgress(job.scanId, job.jobId, progress, message);
       },
-      onEvent: async (type, message, data) => {
+      onEvent: (type, message, data) => {
         this.logger.info({ jobId: job.jobId, type, data }, message);
+        return Promise.resolve();
       },
     };
 
@@ -122,26 +164,35 @@ export class ScanExecutorService implements OnModuleInit {
       const available = await scanner.isAvailable().catch(() => false);
 
       let normalized: NormalizedFinding[];
+      let usedSimulation = false;
+
       if (available) {
-        // Real scanner binary present — run it with a live progress heartbeat and
-        // a hard time cap. If it errors or exceeds the cap, fall back to simulation
-        // so the scan still completes with useful findings instead of hanging.
+        // Real scanner binary present — run it with a live progress heartbeat
+        // and a hard time cap.
         try {
           normalized = await this.runRealWithHeartbeat(scanner, context, job);
         } catch (realError) {
+          if (!demoMode) {
+            // Outside demo mode, a real-scan failure/timeout fails the job —
+            // it never silently substitutes fabricated findings.
+            throw realError;
+          }
           this.logger.warn(
             { err: realError, jobId: job.jobId, scanner: job.scanner },
-            'Real scan failed or timed out — falling back to simulation',
+            'DEMO_MODE: real scan failed or timed out — falling back to simulation',
           );
           normalized = await this.runSimulated(job);
+          usedSimulation = true;
         }
-      } else {
-        // Binary unavailable — fall back to realistic simulation.
-        this.logger.info(
+      } else if (demoMode) {
+        this.logger.warn(
           { jobId: job.jobId, scanner: job.scanner },
-          'Scanner binary unavailable — using simulation fallback',
+          'DEMO_MODE: scanner binary unavailable — using simulation fallback',
         );
         normalized = await this.runSimulated(job);
+        usedSimulation = true;
+      } else {
+        throw new Error(`Scanner binary ${job.scanner} not installed`);
       }
 
       const statistics = this.buildStatistics(normalized);
@@ -154,6 +205,7 @@ export class ScanExecutorService implements OnModuleInit {
         findings: normalized,
         success: true,
         statistics,
+        demoMode: usedSimulation,
       });
     } catch (error) {
       const errorMessage = error instanceof Error ? error.message : 'Scan execution failed';
@@ -264,7 +316,10 @@ export class ScanExecutorService implements OnModuleInit {
       activeJobs: jobs.filter((j) => j.progress > 0 && j.progress < 100).length,
       completedJobs: jobs.filter((j) => j.progress >= 100).length,
       failedJobs: 0,
-      events: message ? [{ timestamp: new Date().toISOString(), type: 'progress', message, severity: 'info' }] : [],
+      events:
+        message !== undefined && message !== ''
+          ? [{ timestamp: new Date().toISOString(), type: 'progress', message, severity: 'info' }]
+          : [],
     });
   }
 

@@ -20,6 +20,7 @@ export * from './constants/cvss';
 // Validators
 export * from './validators/common.validators';
 export * from './validators/auth.validators';
+export * from './validators/scan-target.validator';
 export * from './validators/scan.validators';
 
 // Utils

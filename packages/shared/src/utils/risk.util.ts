@@ -1,6 +1,5 @@
-import { getCvssV3Severity, CVSS_V3_SEVERITY, SLA_DAYS_BY_SEVERITY, RISK_MULTIPLIERS } from '../constants/cvss';
-
-export { getCvssV3Severity };
+import type { CVSS_V3_SEVERITY } from '../constants/cvss';
+import { SLA_DAYS_BY_SEVERITY, RISK_MULTIPLIERS } from '../constants/cvss';
 
 export function calculateRiskScore(params: {
   cvssScore: number;
@@ -45,14 +44,18 @@ export function calculateSlaDeadline(
   severity: keyof typeof CVSS_V3_SEVERITY | 'INFORMATIONAL' | 'NONE',
   detectedAt: Date = new Date(),
 ): Date {
-  const slaDays = SLA_DAYS_BY_SEVERITY[severity as keyof typeof SLA_DAYS_BY_SEVERITY] ?? 90;
+  // severity is a closed union matching SLA_DAYS_BY_SEVERITY's keys exactly, not attacker input
+  // eslint-disable-next-line security/detect-object-injection
+  const slaDays = SLA_DAYS_BY_SEVERITY[severity];
   const deadline = new Date(detectedAt);
   deadline.setDate(deadline.getDate() + slaDays);
   return deadline;
 }
 
 export function isSlaBreached(slaDeadline: Date | null): boolean {
-  if (slaDeadline === null) return false;
+  if (slaDeadline === null) {
+    return false;
+  }
   return new Date() > slaDeadline;
 }
 
@@ -75,26 +78,28 @@ export function calculatePriorityScore(params: {
   return Math.min(100, Math.round(priority * 10) / 10);
 }
 
+const SEVERITY_COLORS = new Map<string, string>([
+  ['CRITICAL', '#dc2626'],
+  ['HIGH', '#ea580c'],
+  ['MEDIUM', '#d97706'],
+  ['LOW', '#2563eb'],
+  ['INFORMATIONAL', '#6b7280'],
+  ['NONE', '#9ca3af'],
+]);
+
 export function getSeverityColor(severity: string): string {
-  const colors: Record<string, string> = {
-    CRITICAL: '#dc2626',
-    HIGH: '#ea580c',
-    MEDIUM: '#d97706',
-    LOW: '#2563eb',
-    INFORMATIONAL: '#6b7280',
-    NONE: '#9ca3af',
-  };
-  return colors[severity] ?? '#6b7280';
+  return SEVERITY_COLORS.get(severity) ?? '#6b7280';
 }
 
+const SEVERITY_LABELS = new Map<string, string>([
+  ['CRITICAL', 'Critical'],
+  ['HIGH', 'High'],
+  ['MEDIUM', 'Medium'],
+  ['LOW', 'Low'],
+  ['INFORMATIONAL', 'Info'],
+  ['NONE', 'None'],
+]);
+
 export function getSeverityLabel(severity: string): string {
-  const labels: Record<string, string> = {
-    CRITICAL: 'Critical',
-    HIGH: 'High',
-    MEDIUM: 'Medium',
-    LOW: 'Low',
-    INFORMATIONAL: 'Info',
-    NONE: 'None',
-  };
-  return labels[severity] ?? severity;
+  return SEVERITY_LABELS.get(severity) ?? severity;
 }

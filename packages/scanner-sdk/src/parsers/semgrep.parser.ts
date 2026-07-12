@@ -1,10 +1,15 @@
-import type { NormalizedFinding } from '@sentinelx/shared';
-import { BaseScanner } from '../base/base-scanner';
-import type { ScannerContext, ScannerMetadata } from '../interfaces/scanner.interface';
-import { exec } from 'child_process';
+import { execFile } from 'child_process';
 import { promisify } from 'util';
 
-const execAsync = promisify(exec);
+import type { NormalizedFinding } from '@sentinelx/shared';
+
+import { BaseScanner } from '../base/base-scanner';
+import type { ScannerContext, ScannerMetadata } from '../interfaces/scanner.interface';
+
+const execFileAsync = promisify(execFile);
+
+const SAFE_PATH_REGEX = /^[a-zA-Z0-9_\-./:@]+$/;
+const SEMGREP_RULESET_REGEX = /^(?:p\/[a-zA-Z0-9_-]+|[a-zA-Z0-9_\-./]+)$/;
 
 export class SemgrepParser extends BaseScanner {
   readonly metadata: ScannerMetadata = {
@@ -26,7 +31,7 @@ export class SemgrepParser extends BaseScanner {
 
   async isAvailable(): Promise<boolean> {
     try {
-      await execAsync('semgrep --version');
+      await execFileAsync('semgrep', ['--version']);
       return true;
     } catch {
       return false;
@@ -35,7 +40,7 @@ export class SemgrepParser extends BaseScanner {
 
   async getVersion(): Promise<string> {
     try {
-      const { stdout } = await execAsync('semgrep --version');
+      const { stdout } = await execFileAsync('semgrep', ['--version']);
       return stdout.trim().split('\n')[0] ?? 'unknown';
     } catch {
       return 'unknown';
@@ -46,13 +51,20 @@ export class SemgrepParser extends BaseScanner {
     const { target, configuration, workDir, timeout } = context;
     const outputFile = `${workDir}/semgrep-${context.jobId}.json`;
 
-    const args = this.buildSemgrepArgs(target, configuration as unknown as Record<string, unknown>, outputFile);
-    const command = `semgrep ${args.join(' ')}`;
+    if (!SAFE_PATH_REGEX.test(target)) {
+      throw new Error(`Invalid Semgrep target rejected: ${target}`);
+    }
 
-    await context.onEvent('scan_started', `Starting Semgrep analysis on ${target}`);
+    const args = this.buildSemgrepArgs(
+      target,
+      configuration as unknown as Record<string, unknown>,
+      outputFile,
+    );
+
+    await context.onEvent('scan_started', `Starting Semgrep analysis on ${target}`, { args });
     await context.onProgress(5, 'Running Semgrep rules');
 
-    await execAsync(command, {
+    await execFileAsync('semgrep', args, {
       timeout: timeout * 1000,
       maxBuffer: 200 * 1024 * 1024,
       cwd: workDir,
@@ -66,40 +78,46 @@ export class SemgrepParser extends BaseScanner {
     }
   }
 
-  async parse(rawOutput: string, context: ScannerContext): Promise<NormalizedFinding[]> {
-    if (!rawOutput.trim()) return [];
+  parse(rawOutput: string, context: ScannerContext): Promise<NormalizedFinding[]> {
+    if (!rawOutput.trim()) {
+      return Promise.resolve([]);
+    }
 
     let report: SemgrepReport;
     try {
       report = JSON.parse(rawOutput) as SemgrepReport;
     } catch {
-      return [];
+      return Promise.resolve([]);
     }
 
-    return (report.results ?? []).map((result) => {
-      const severity = this.mapSemgrepSeverity(result.extra?.severity ?? 'warning');
-      const check = result.check_id ?? '';
+    return Promise.resolve(
+      (report.results ?? []).map((result) => {
+        const severity = this.mapSemgrepSeverity(result.extra?.severity ?? 'warning');
+        const check = result.check_id ?? '';
+        const cwe = result.extra?.metadata?.cwe;
+        const cweText = Array.isArray(cwe) ? cwe.join(',') : (cwe ?? '');
 
-      return {
-        scanner: 'SEMGREP',
-        pluginId: check,
-        title: result.extra?.message ?? check ?? 'Code Issue',
-        description: result.extra?.message ?? '',
-        severity,
-        target: context.target,
-        url: `${result.path}:${result.start?.line}`,
-        cveIds: this.extractCveIds(check + (result.extra?.message ?? '')),
-        cweIds: this.extractCweIds(check + (result.extra?.metadata?.cwe ?? '')),
-        solution: result.extra?.metadata?.fix ?? undefined,
-        evidence: result.extra?.lines ?? undefined,
-        references: result.extra?.metadata?.references ?? [],
-        fingerprint: this.generateFingerprint({
-          checkId: check,
-          path: result.path,
-          line: result.start?.line,
-        }),
-      };
-    });
+        return {
+          scanner: 'SEMGREP',
+          pluginId: check,
+          title: result.extra?.message ?? check,
+          description: result.extra?.message ?? '',
+          severity,
+          target: context.target,
+          url: `${result.path}:${result.start?.line}`,
+          cveIds: this.extractCveIds(check + (result.extra?.message ?? '')),
+          cweIds: this.extractCweIds(check + cweText),
+          solution: result.extra?.metadata?.fix ?? undefined,
+          evidence: result.extra?.lines ?? undefined,
+          references: result.extra?.metadata?.references ?? [],
+          fingerprint: this.generateFingerprint({
+            checkId: check,
+            path: result.path,
+            line: result.start?.line,
+          }),
+        };
+      }),
+    );
   }
 
   private buildSemgrepArgs(
@@ -112,6 +130,9 @@ export class SemgrepParser extends BaseScanner {
     const rulesets = config['rulesets'] as string[] | undefined;
     if (rulesets && rulesets.length > 0) {
       for (const r of rulesets) {
+        if (!SEMGREP_RULESET_REGEX.test(r) || r.includes('..')) {
+          throw new Error(`Invalid Semgrep ruleset rejected: ${r}`);
+        }
         args.push('--config', r);
       }
     } else {
@@ -124,6 +145,9 @@ export class SemgrepParser extends BaseScanner {
     const exclude = config['exclude'] as string[] | undefined;
     if (exclude && exclude.length > 0) {
       for (const e of exclude) {
+        if (!SAFE_PATH_REGEX.test(e)) {
+          throw new Error(`Invalid Semgrep exclude pattern rejected: ${e}`);
+        }
         args.push('--exclude', e);
       }
     }

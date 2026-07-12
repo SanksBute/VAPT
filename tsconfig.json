@@ -1,0 +1,9 @@
+{
+  "extends": "./tsconfig.base.json",
+  "compilerOptions": {
+    "composite": true,
+    "noEmit": true
+  },
+  "files": [],
+  "references": [{ "path": "./apps/web" }, { "path": "./apps/api-gateway" }, { "path": "./packages/shared" }, { "path": "./packages/scanner-sdk" }, { "path": "./packages/database" }]
+}

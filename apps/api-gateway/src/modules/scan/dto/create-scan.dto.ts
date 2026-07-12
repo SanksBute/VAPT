@@ -1,7 +1,31 @@
 import { ApiProperty, ApiPropertyOptional } from '@nestjs/swagger';
+import { isValidScanTarget } from '@sentinelx/shared';
 import {
-  IsString, IsEnum, IsArray, IsOptional, IsObject, IsUUID, IsInt, Min, Max, MaxLength,
+  IsString,
+  IsEnum,
+  IsArray,
+  IsOptional,
+  IsObject,
+  IsUUID,
+  IsInt,
+  Min,
+  Max,
+  MaxLength,
+  ValidatorConstraint,
+  ValidatorConstraintInterface,
+  Validate,
 } from 'class-validator';
+
+@ValidatorConstraint({ name: 'isValidScanTarget', async: false })
+class IsValidScanTargetConstraint implements ValidatorConstraintInterface {
+  validate(value: unknown): boolean {
+    return typeof value === 'string' && isValidScanTarget(value);
+  }
+
+  defaultMessage(): string {
+    return 'Each target must be a valid hostname, IPv4/IPv6 address, or CIDR range';
+  }
+}
 
 export class CreateScanDto {
   @ApiProperty({ example: 'Production API Scan Q3 2026' })
@@ -16,21 +40,55 @@ export class CreateScanDto {
   description?: string;
 
   @ApiProperty({
-    enum: ['DISCOVERY', 'PORT_SCAN', 'VULNERABILITY_ASSESSMENT', 'WEB_APPLICATION', 'API_SECURITY', 'CLOUD_SECURITY', 'CONTAINER_SECURITY', 'KUBERNETES_SECURITY', 'AD_SECURITY', 'CODE_ANALYSIS', 'SECRET_DETECTION', 'PENETRATION_TEST', 'COMPLIANCE', 'THREAT_INTEL', 'FULL'],
+    enum: [
+      'DISCOVERY',
+      'PORT_SCAN',
+      'VULNERABILITY_ASSESSMENT',
+      'WEB_APPLICATION',
+      'API_SECURITY',
+      'CLOUD_SECURITY',
+      'CONTAINER_SECURITY',
+      'KUBERNETES_SECURITY',
+      'AD_SECURITY',
+      'CODE_ANALYSIS',
+      'SECRET_DETECTION',
+      'PENETRATION_TEST',
+      'COMPLIANCE',
+      'THREAT_INTEL',
+      'FULL',
+    ],
     example: 'VULNERABILITY_ASSESSMENT',
   })
-  @IsEnum(['DISCOVERY', 'PORT_SCAN', 'VULNERABILITY_ASSESSMENT', 'WEB_APPLICATION', 'API_SECURITY', 'CLOUD_SECURITY', 'CONTAINER_SECURITY', 'KUBERNETES_SECURITY', 'AD_SECURITY', 'CODE_ANALYSIS', 'SECRET_DETECTION', 'PENETRATION_TEST', 'COMPLIANCE', 'THREAT_INTEL', 'FULL'])
+  @IsEnum([
+    'DISCOVERY',
+    'PORT_SCAN',
+    'VULNERABILITY_ASSESSMENT',
+    'WEB_APPLICATION',
+    'API_SECURITY',
+    'CLOUD_SECURITY',
+    'CONTAINER_SECURITY',
+    'KUBERNETES_SECURITY',
+    'AD_SECURITY',
+    'CODE_ANALYSIS',
+    'SECRET_DETECTION',
+    'PENETRATION_TEST',
+    'COMPLIANCE',
+    'THREAT_INTEL',
+    'FULL',
+  ])
   scanType!: string;
 
   @ApiProperty({ type: [String], example: ['192.168.1.0/24', 'api.example.com'] })
   @IsArray()
   @IsString({ each: true })
+  @Validate(IsValidScanTargetConstraint, { each: true })
   targets!: string[];
 
   @ApiPropertyOptional({ type: [String] })
   @IsOptional()
   @IsArray()
   @IsString({ each: true })
+  @Validate(IsValidScanTargetConstraint, { each: true })
   excludeTargets?: string[];
 
   @ApiPropertyOptional({ description: 'Scan profile UUID to use for configuration' })

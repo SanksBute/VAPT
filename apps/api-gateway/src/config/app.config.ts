@@ -1,6 +1,16 @@
 import { registerAs } from '@nestjs/config';
 import Joi from 'joi';
 
+function requireEnv(name: string): string {
+  // name is an internal, hardcoded env var key at each call site, not user input
+  // eslint-disable-next-line security/detect-object-injection
+  const value = process.env[name];
+  if (value === undefined || value === '') {
+    throw new Error(`Missing required environment variable: ${name}`);
+  }
+  return value;
+}
+
 export const appConfig = registerAs('app', () => ({
   nodeEnv: process.env['NODE_ENV'] ?? 'development',
   port: parseInt(process.env['PORT'] ?? '3001', 10),
@@ -9,7 +19,7 @@ export const appConfig = registerAs('app', () => ({
   frontendUrl: process.env['FRONTEND_URL'] ?? 'http://localhost:3000',
 
   // Database
-  databaseUrl: process.env['DATABASE_URL']!,
+  databaseUrl: requireEnv('DATABASE_URL'),
 
   // Redis
   redisUrl: process.env['REDIS_URL'] ?? 'redis://localhost:6379',
@@ -19,12 +29,12 @@ export const appConfig = registerAs('app', () => ({
   rabbitmqUrl: process.env['RABBITMQ_URL'] ?? 'amqp://guest:guest@localhost:5672',
 
   // Auth
-  jwtSecret: process.env['JWT_SECRET']!,
-  jwtRefreshSecret: process.env['JWT_REFRESH_SECRET']!,
+  jwtSecret: requireEnv('JWT_SECRET'),
+  jwtRefreshSecret: requireEnv('JWT_REFRESH_SECRET'),
   jwtAccessExpiry: process.env['JWT_ACCESS_EXPIRY'] ?? '15m',
   jwtRefreshExpiry: process.env['JWT_REFRESH_EXPIRY'] ?? '30d',
-  encryptionKey: process.env['ENCRYPTION_KEY']!,
-  cookieSecret: process.env['COOKIE_SECRET']!,
+  encryptionKey: requireEnv('ENCRYPTION_KEY'),
+  cookieSecret: requireEnv('COOKIE_SECRET'),
 
   // OAuth2
   googleClientId: process.env['GOOGLE_CLIENT_ID'],
@@ -42,8 +52,8 @@ export const appConfig = registerAs('app', () => ({
   // Object Storage
   minioEndpoint: process.env['MINIO_ENDPOINT'] ?? 'localhost',
   minioPort: parseInt(process.env['MINIO_PORT'] ?? '9000', 10),
-  minioAccessKey: process.env['MINIO_ACCESS_KEY']!,
-  minioSecretKey: process.env['MINIO_SECRET_KEY']!,
+  minioAccessKey: requireEnv('MINIO_ACCESS_KEY'),
+  minioSecretKey: requireEnv('MINIO_SECRET_KEY'),
   minioBucket: process.env['MINIO_BUCKET'] ?? 'sentinelx',
   minioUseSsl: process.env['MINIO_USE_SSL'] === 'true',
 
@@ -76,6 +86,11 @@ export const appConfig = registerAs('app', () => ({
   // Feature flags
   enableAiCopilot: process.env['ENABLE_AI_COPILOT'] !== 'false',
   enableMarketplace: process.env['ENABLE_MARKETPLACE'] !== 'false',
+
+  // DEMO MODE — when false (the default), scans that can't run for real
+  // (unregistered scanner, missing binary, real-scan error/timeout) fail
+  // loudly instead of returning simulated findings. Never enable in production.
+  demoMode: process.env['SENTINELX_DEMO_MODE'] === 'true',
 
   // Rate limiting
   rateLimitRpm: parseInt(process.env['RATE_LIMIT_RPM'] ?? '100', 10),

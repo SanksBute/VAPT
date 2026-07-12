@@ -1,12 +1,21 @@
-import type { NormalizedFinding } from '@sentinelx/shared';
-import { XMLParser } from 'fast-xml-parser';
-import type { ScannerContext } from '../interfaces/scanner.interface';
-import { BaseScanner } from '../base/base-scanner';
-import type { ScannerMetadata } from '../interfaces/scanner.interface';
-import { exec } from 'child_process';
+import { execFile } from 'child_process';
 import { promisify } from 'util';
 
-const execAsync = promisify(exec);
+import { isValidScanTarget, type NormalizedFinding } from '@sentinelx/shared';
+import { XMLParser } from 'fast-xml-parser';
+
+import { BaseScanner } from '../base/base-scanner';
+import type { ScannerContext, ScannerMetadata } from '../interfaces/scanner.interface';
+
+const execFileAsync = promisify(execFile);
+
+// Bounded, comma-delimited numeric ranges only — each repetition must be
+// preceded by a literal ',', so matching stays linear in input length.
+// eslint-disable-next-line security/detect-unsafe-regex
+const PORT_SPEC_REGEX = /^[0-9]+(?:-[0-9]+)?(?:,[0-9]+(?:-[0-9]+)?)*$/;
+const NMAP_SCRIPT_NAME_REGEX = /^[a-zA-Z0-9_*.-]+$/;
+const NMAP_TIMING_REGEX = /^-T[0-5]$/;
+const ADDR_TYPE_ATTR = '@_addrtype';
 
 interface NmapHost {
   '@_starttime'?: string;
@@ -85,11 +94,11 @@ export class NmapParser extends BaseScanner {
 
   async isAvailable(): Promise<boolean> {
     try {
-      await execAsync('nmap --version');
+      await execFileAsync('nmap', ['--version']);
       return true;
     } catch {
       try {
-        await execAsync('docker image inspect instrumentisto/nmap:latest');
+        await execFileAsync('docker', ['image', 'inspect', 'instrumentisto/nmap:latest']);
         return true;
       } catch {
         return false;
@@ -99,7 +108,7 @@ export class NmapParser extends BaseScanner {
 
   async getVersion(): Promise<string> {
     try {
-      const { stdout } = await execAsync('nmap --version');
+      const { stdout } = await execFileAsync('nmap', ['--version']);
       const match = /Nmap version (\S+)/.exec(stdout);
       return match?.[1] ?? 'unknown';
     } catch {
@@ -111,13 +120,20 @@ export class NmapParser extends BaseScanner {
     const { target, configuration, workDir, timeout } = context;
     const outputFile = `${workDir}/nmap-${context.jobId}.xml`;
 
-    const args = this.buildNmapArgs(target, configuration as unknown as Record<string, unknown>, outputFile);
-    const command = `nmap ${args.join(' ')}`;
+    if (!isValidScanTarget(target)) {
+      throw new Error(`Invalid scan target rejected: ${target}`);
+    }
 
-    await context.onEvent('scan_started', `Starting Nmap scan on ${target}`, { command });
+    const args = this.buildNmapArgs(
+      target,
+      configuration as unknown as Record<string, unknown>,
+      outputFile,
+    );
+
+    await context.onEvent('scan_started', `Starting Nmap scan on ${target}`, { args });
     await context.onProgress(5, 'Initializing Nmap scan');
 
-    const { stdout, stderr } = await execAsync(command, {
+    const { stdout, stderr } = await execFileAsync('nmap', args, {
       timeout: timeout * 1000,
       maxBuffer: 100 * 1024 * 1024,
       cwd: workDir,
@@ -127,65 +143,91 @@ export class NmapParser extends BaseScanner {
 
     const fs = await import('fs/promises');
     try {
-      const xmlOutput = await fs.readFile(outputFile, 'utf-8');
-      return xmlOutput;
+      return await fs.readFile(outputFile, 'utf-8');
     } catch {
       return stdout + stderr;
     }
   }
 
-  async parse(rawOutput: string, context: ScannerContext): Promise<NormalizedFinding[]> {
+  parse(rawOutput: string, context: ScannerContext): Promise<NormalizedFinding[]> {
     const findings: NormalizedFinding[] = [];
 
-    let xmlData: string = rawOutput;
+    const xmlData: string = rawOutput;
     if (!rawOutput.trim().startsWith('<')) {
-      return findings;
+      return Promise.resolve(findings);
     }
 
     const parser = new XMLParser({
       ignoreAttributes: false,
       attributeNamePrefix: '@_',
-      isArray: (name) => ['host', 'port', 'hostname', 'osmatch', 'script', 'address', 'cpe'].includes(name),
+      isArray: (name): boolean =>
+        ['host', 'port', 'hostname', 'osmatch', 'script', 'address', 'cpe'].includes(name),
     });
 
     const result = parser.parse(xmlData) as NmapXmlRoot;
     const nmapRun = result.nmaprun;
-    if (!nmapRun) return findings;
+    if (!nmapRun) {
+      return Promise.resolve(findings);
+    }
 
     const hosts = Array.isArray(nmapRun.host) ? nmapRun.host : nmapRun.host ? [nmapRun.host] : [];
 
     for (const host of hosts) {
       const hostState = host.status?.['@_state'];
-      if (hostState !== 'up') continue;
+      if (hostState !== 'up') {
+        continue;
+      }
 
-      const addresses = Array.isArray(host.address) ? host.address : host.address ? [host.address] : [];
-      const ipAddress = addresses.find((a) => a['@_addrtype'] === 'ipv4')?.['@_addr'] ??
-        addresses.find((a) => a['@_addrtype'] === 'ipv6')?.['@_addr'] ?? context.target;
+      const addresses = Array.isArray(host.address)
+        ? host.address
+        : host.address
+          ? [host.address]
+          : [];
+      // ADDR_TYPE_ATTR is a fixed internal constant, not attacker input
+      const ipAddress =
+        // eslint-disable-next-line security/detect-object-injection
+        addresses.find((a) => a[ADDR_TYPE_ATTR] === 'ipv4')?.['@_addr'] ??
+        // eslint-disable-next-line security/detect-object-injection
+        addresses.find((a) => a[ADDR_TYPE_ATTR] === 'ipv6')?.['@_addr'] ??
+        context.target;
 
       const hostnamesObj = host.hostnames?.hostname;
-      const hostnameList = Array.isArray(hostnamesObj) ? hostnamesObj : hostnamesObj ? [hostnamesObj] : [];
+      const hostnameList = Array.isArray(hostnamesObj)
+        ? hostnamesObj
+        : hostnamesObj
+          ? [hostnamesObj]
+          : [];
       const hostname = hostnameList.find((h) => h['@_type'] === 'PTR')?.['@_name'];
 
-      const ports = Array.isArray(host.ports?.port) ? host.ports!.port! : host.ports?.port ? [host.ports.port] : [];
+      const ports = Array.isArray(host.ports?.port)
+        ? host.ports.port
+        : host.ports?.port
+          ? [host.ports.port]
+          : [];
 
       for (const port of ports) {
         const portState = port.state?.['@_state'];
-        if (portState !== 'open') continue;
+        if (portState !== 'open') {
+          continue;
+        }
 
-        const portNum = parseInt(port['@_portid'] ?? '0', 10);
-        const protocol = port['@_protocol'] ?? 'tcp';
+        const portNum = parseInt(port['@_portid'], 10);
+        const protocol = port['@_protocol'];
         const service = port.service;
         const serviceName = service?.['@_name'];
         const serviceProduct = service?.['@_product'];
         const serviceVersion = service?.['@_version'];
 
+        const serviceSuffix = serviceName !== undefined ? ` (${serviceName})` : '';
+        const hostnameSuffix = hostname !== undefined ? ` (${hostname})` : '';
+
         // Report open port as informational finding
         findings.push({
           scanner: 'NMAP',
           pluginId: `open-port-${portNum}-${protocol}`,
-          title: `Open Port ${portNum}/${protocol}${serviceName !== undefined ? ` (${serviceName})` : ''}`,
+          title: `Open Port ${portNum}/${protocol}${serviceSuffix}`,
           description:
-            `Port ${portNum}/${protocol} is open on ${ipAddress}${hostname !== undefined ? ` (${hostname})` : ''}.` +
+            `Port ${portNum}/${protocol} is open on ${ipAddress}${hostnameSuffix}.` +
             (serviceProduct !== undefined ? ` Service: ${serviceProduct}` : '') +
             (serviceVersion !== undefined ? ` ${serviceVersion}` : ''),
           severity: this.assessPortSeverity(portNum, serviceName ?? ''),
@@ -207,13 +249,23 @@ export class NmapParser extends BaseScanner {
         // Parse Nmap scripts output for vulnerabilities
         const scripts = Array.isArray(port.script) ? port.script : port.script ? [port.script] : [];
         for (const script of scripts) {
-          const scriptFindings = this.parseScriptOutput(script, ipAddress, portNum, protocol, serviceName ?? '');
+          const scriptFindings = this.parseScriptOutput(
+            script,
+            ipAddress,
+            portNum,
+            protocol,
+            serviceName ?? '',
+          );
           findings.push(...scriptFindings);
         }
       }
 
       // OS Detection findings
-      const osMatches = Array.isArray(host.os?.osmatch) ? host.os!.osmatch! : host.os?.osmatch ? [host.os.osmatch] : [];
+      const osMatches = Array.isArray(host.os?.osmatch)
+        ? host.os.osmatch
+        : host.os?.osmatch
+          ? [host.os.osmatch]
+          : [];
       if (osMatches.length > 0) {
         const bestMatch = osMatches[0];
         if (bestMatch !== undefined) {
@@ -233,10 +285,14 @@ export class NmapParser extends BaseScanner {
       }
     }
 
-    return findings;
+    return Promise.resolve(findings);
   }
 
-  private buildNmapArgs(target: string, config: Record<string, unknown>, outputFile: string): string[] {
+  private buildNmapArgs(
+    target: string,
+    config: Record<string, unknown>,
+    outputFile: string,
+  ): string[] {
     const args: string[] = [];
 
     // Output format
@@ -272,6 +328,11 @@ export class NmapParser extends BaseScanner {
     if (config['scriptScan'] === true) {
       const scripts = config['scripts'] as string[] | undefined;
       if (scripts && scripts.length > 0) {
+        for (const script of scripts) {
+          if (!NMAP_SCRIPT_NAME_REGEX.test(script)) {
+            throw new Error(`Invalid Nmap script name rejected: ${script}`);
+          }
+        }
         args.push(`--script=${scripts.join(',')}`);
       } else {
         args.push('--script=default,vuln,auth');
@@ -280,7 +341,10 @@ export class NmapParser extends BaseScanner {
 
     // Ports
     const ports = config['ports'] as string | undefined;
-    if (ports) {
+    if (ports !== undefined && ports !== '') {
+      if (!PORT_SPEC_REGEX.test(ports)) {
+        throw new Error(`Invalid port specification rejected: ${ports}`);
+      }
       args.push('-p', ports);
     } else {
       args.push('-p', '1-65535');
@@ -288,7 +352,10 @@ export class NmapParser extends BaseScanner {
 
     // Timing
     const timing = config['timing'] as string | undefined;
-    if (timing) {
+    if (timing !== undefined && timing !== '') {
+      if (!NMAP_TIMING_REGEX.test(timing)) {
+        throw new Error(`Invalid timing template rejected: ${timing}`);
+      }
       args.push(timing);
     } else {
       args.push('-T4');
@@ -296,7 +363,10 @@ export class NmapParser extends BaseScanner {
 
     // Rate limiting
     const rateLimit = config['rateLimit'] as number | undefined;
-    if (rateLimit) {
+    if (rateLimit !== undefined) {
+      if (!Number.isInteger(rateLimit) || rateLimit <= 0 || rateLimit > 1_000_000) {
+        throw new Error(`Invalid rate limit rejected: ${String(rateLimit)}`);
+      }
       args.push(`--max-rate=${rateLimit}`);
     }
 
@@ -312,13 +382,23 @@ export class NmapParser extends BaseScanner {
     const highPorts = [21, 25, 53, 110, 143, 993, 995, 8443];
     const mediumPorts = [80, 8080, 8000, 8888, 9000];
 
-    if (criticalPorts.includes(port)) return 'HIGH';
-    if (highPorts.includes(port)) return 'MEDIUM';
-    if (mediumPorts.includes(port)) return 'LOW';
+    if (criticalPorts.includes(port)) {
+      return 'HIGH';
+    }
+    if (highPorts.includes(port)) {
+      return 'MEDIUM';
+    }
+    if (mediumPorts.includes(port)) {
+      return 'LOW';
+    }
 
     const lowerService = service.toLowerCase();
-    if (['telnet', 'ftp', 'rexec', 'rlogin', 'rsh'].includes(lowerService)) return 'HIGH';
-    if (['rdp', 'vnc', 'x11'].includes(lowerService)) return 'HIGH';
+    if (['telnet', 'ftp', 'rexec', 'rlogin', 'rsh'].includes(lowerService)) {
+      return 'HIGH';
+    }
+    if (['rdp', 'vnc', 'x11'].includes(lowerService)) {
+      return 'HIGH';
+    }
 
     return 'INFORMATIONAL';
   }
@@ -331,8 +411,8 @@ export class NmapParser extends BaseScanner {
     service: string,
   ): NormalizedFinding[] {
     const findings: NormalizedFinding[] = [];
-    const scriptId = script['@_id'] ?? '';
-    const output = script['@_output'] ?? '';
+    const scriptId = script['@_id'];
+    const output = script['@_output'];
 
     if (!output || output.toLowerCase().includes('not vulnerable')) {
       return findings;

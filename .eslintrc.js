@@ -4,14 +4,9 @@ module.exports = {
   parserOptions: {
     ecmaVersion: 2022,
     sourceType: 'module',
-    project: './tsconfig.json',
+    project: ['./tsconfig.json', './apps/*/tsconfig.json', './packages/*/tsconfig.json'],
   },
-  plugins: [
-    '@typescript-eslint',
-    'import',
-    'security',
-    'sonarjs',
-  ],
+  plugins: ['@typescript-eslint', 'import', 'security', 'sonarjs'],
   extends: [
     'eslint:recommended',
     'plugin:@typescript-eslint/recommended',
@@ -19,13 +14,12 @@ module.exports = {
     'plugin:import/recommended',
     'plugin:import/typescript',
     'plugin:security/recommended-legacy',
-    'plugin:sonarjs/recommended',
+    'plugin:sonarjs/recommended-legacy',
     'prettier',
   ],
   rules: {
     // TypeScript strict rules
     '@typescript-eslint/no-explicit-any': 'error',
-    '@typescript-eslint/no-unsafe-any': 'error',
     '@typescript-eslint/no-unsafe-assignment': 'error',
     '@typescript-eslint/no-unsafe-call': 'error',
     '@typescript-eslint/no-unsafe-member-access': 'error',
@@ -80,8 +74,8 @@ module.exports = {
     'no-new-func': 'error',
     'prefer-const': 'error',
     'no-var': 'error',
-    'eqeqeq': ['error', 'always'],
-    'curly': ['error', 'all'],
+    eqeqeq: ['error', 'always'],
+    curly: ['error', 'all'],
     'no-throw-literal': 'error',
     'prefer-promise-reject-errors': 'error',
   },

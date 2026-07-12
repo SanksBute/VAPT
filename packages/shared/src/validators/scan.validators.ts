@@ -1,21 +1,65 @@
 import { z } from 'zod';
 
+import { isValidScanTarget } from './scan-target.validator';
+
 export const createScanSchema = z.object({
   name: z.string().min(1).max(500).trim(),
   description: z.string().max(2000).optional(),
   scanType: z.enum([
-    'DISCOVERY', 'PORT_SCAN', 'VULNERABILITY_ASSESSMENT', 'WEB_APPLICATION',
-    'API_SECURITY', 'CLOUD_SECURITY', 'CONTAINER_SECURITY', 'KUBERNETES_SECURITY',
-    'AD_SECURITY', 'CODE_ANALYSIS', 'SECRET_DETECTION', 'PENETRATION_TEST',
-    'COMPLIANCE', 'THREAT_INTEL', 'FULL',
+    'DISCOVERY',
+    'PORT_SCAN',
+    'VULNERABILITY_ASSESSMENT',
+    'WEB_APPLICATION',
+    'API_SECURITY',
+    'CLOUD_SECURITY',
+    'CONTAINER_SECURITY',
+    'KUBERNETES_SECURITY',
+    'AD_SECURITY',
+    'CODE_ANALYSIS',
+    'SECRET_DETECTION',
+    'PENETRATION_TEST',
+    'COMPLIANCE',
+    'THREAT_INTEL',
+    'FULL',
   ]),
-  targets: z.array(z.string().min(1).max(500)).min(1).max(1000),
-  excludeTargets: z.array(z.string().max(500)).default([]),
-  scanners: z.array(z.enum([
-    'NMAP', 'MASSCAN', 'RUSTSCAN', 'OPENVAS', 'ZAP', 'NIKTO', 'SQLMAP',
-    'NUCLEI', 'TRIVY', 'SCOUTSUITE', 'PROWLER', 'SEMGREP', 'MOBSF',
-    'LYNIS', 'OSQUERY', 'FALCO', 'CUSTOM',
-  ])).optional(),
+  targets: z
+    .array(
+      z.string().min(1).max(500).refine(isValidScanTarget, {
+        message: 'Target must be a valid hostname, IPv4/IPv6 address, or CIDR range',
+      }),
+    )
+    .min(1)
+    .max(1000),
+  excludeTargets: z
+    .array(
+      z.string().max(500).refine(isValidScanTarget, {
+        message: 'Target must be a valid hostname, IPv4/IPv6 address, or CIDR range',
+      }),
+    )
+    .default([]),
+  scanners: z
+    .array(
+      z.enum([
+        'NMAP',
+        'MASSCAN',
+        'RUSTSCAN',
+        'OPENVAS',
+        'ZAP',
+        'NIKTO',
+        'SQLMAP',
+        'NUCLEI',
+        'TRIVY',
+        'SCOUTSUITE',
+        'PROWLER',
+        'SEMGREP',
+        'MOBSF',
+        'LYNIS',
+        'OSQUERY',
+        'FALCO',
+        'CUSTOM',
+      ]),
+    )
+    .optional(),
   profileId: z.string().uuid().optional(),
   projectId: z.string().uuid().optional(),
   priority: z.number().int().min(1).max(10).default(5),
@@ -30,10 +74,21 @@ export const createScanScheduleSchema = z.object({
   name: z.string().min(1).max(255).trim(),
   description: z.string().max(2000).optional(),
   scanType: z.enum([
-    'DISCOVERY', 'PORT_SCAN', 'VULNERABILITY_ASSESSMENT', 'WEB_APPLICATION',
-    'API_SECURITY', 'CLOUD_SECURITY', 'CONTAINER_SECURITY', 'KUBERNETES_SECURITY',
-    'AD_SECURITY', 'CODE_ANALYSIS', 'SECRET_DETECTION', 'PENETRATION_TEST',
-    'COMPLIANCE', 'THREAT_INTEL', 'FULL',
+    'DISCOVERY',
+    'PORT_SCAN',
+    'VULNERABILITY_ASSESSMENT',
+    'WEB_APPLICATION',
+    'API_SECURITY',
+    'CLOUD_SECURITY',
+    'CONTAINER_SECURITY',
+    'KUBERNETES_SECURITY',
+    'AD_SECURITY',
+    'CODE_ANALYSIS',
+    'SECRET_DETECTION',
+    'PENETRATION_TEST',
+    'COMPLIANCE',
+    'THREAT_INTEL',
+    'FULL',
   ]),
   configuration: z.record(z.unknown()).default({}),
   targets: z.array(z.string()).default([]),

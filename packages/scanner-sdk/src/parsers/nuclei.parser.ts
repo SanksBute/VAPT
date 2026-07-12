@@ -1,11 +1,18 @@
-import type { NormalizedFinding } from '@sentinelx/shared';
-import { XMLParser } from 'fast-xml-parser';
-import { BaseScanner } from '../base/base-scanner';
-import type { ScannerContext, ScannerMetadata } from '../interfaces/scanner.interface';
-import { exec } from 'child_process';
+import { execFile } from 'child_process';
 import { promisify } from 'util';
 
-const execAsync = promisify(exec);
+import { isValidScanTarget, type NormalizedFinding } from '@sentinelx/shared';
+
+import { BaseScanner } from '../base/base-scanner';
+import type { ScannerContext, ScannerMetadata } from '../interfaces/scanner.interface';
+
+const execFileAsync = promisify(execFile);
+
+const NUCLEI_TAG_REGEX = /^[a-zA-Z0-9_-]+$/;
+const NUCLEI_SEVERITY_ALLOWLIST = new Set(['critical', 'high', 'medium', 'low', 'info', 'unknown']);
+const NUCLEI_TEMPLATE_REGEX = /^[a-zA-Z0-9_\-./]+$/;
+const TEMPLATE_ID_KEY = 'template-id';
+const CVSS_SCORE_KEY = 'cvss-score';
 
 export class NucleiParser extends BaseScanner {
   readonly metadata: ScannerMetadata = {
@@ -13,7 +20,12 @@ export class NucleiParser extends BaseScanner {
     version: '3.2.0',
     displayName: 'Nuclei',
     description: 'Fast and customizable vulnerability scanner based on templates',
-    supportedScanTypes: ['VULNERABILITY_ASSESSMENT', 'WEB_APPLICATION', 'API_SECURITY', 'DISCOVERY'],
+    supportedScanTypes: [
+      'VULNERABILITY_ASSESSMENT',
+      'WEB_APPLICATION',
+      'API_SECURITY',
+      'DISCOVERY',
+    ],
     supportedTargetTypes: ['url', 'ip', 'hostname', 'domain'],
     requiresCredentials: false,
     supportsParallel: true,
@@ -27,7 +39,7 @@ export class NucleiParser extends BaseScanner {
 
   async isAvailable(): Promise<boolean> {
     try {
-      await execAsync('nuclei -version');
+      await execFileAsync('nuclei', ['-version']);
       return true;
     } catch {
       return false;
@@ -36,7 +48,7 @@ export class NucleiParser extends BaseScanner {
 
   async getVersion(): Promise<string> {
     try {
-      const { stderr } = await execAsync('nuclei -version');
+      const { stderr } = await execFileAsync('nuclei', ['-version']);
       const match = /Nuclei Engine Version: v?(\S+)/i.exec(stderr);
       return match?.[1] ?? 'unknown';
     } catch {
@@ -48,13 +60,20 @@ export class NucleiParser extends BaseScanner {
     const { target, configuration, workDir, timeout } = context;
     const outputFile = `${workDir}/nuclei-${context.jobId}.jsonl`;
 
-    const args = this.buildNucleiArgs(target, configuration as unknown as Record<string, unknown>, outputFile);
-    const command = `nuclei ${args.join(' ')}`;
+    if (!isValidScanTarget(target) && !this.isValidHttpUrl(target)) {
+      throw new Error(`Invalid scan target rejected: ${target}`);
+    }
 
-    await context.onEvent('scan_started', `Starting Nuclei scan on ${target}`);
+    const args = this.buildNucleiArgs(
+      target,
+      configuration as unknown as Record<string, unknown>,
+      outputFile,
+    );
+
+    await context.onEvent('scan_started', `Starting Nuclei scan on ${target}`, { args });
     await context.onProgress(5, 'Running Nuclei templates');
 
-    await execAsync(command, {
+    await execFileAsync('nuclei', args, {
       timeout: timeout * 1000,
       maxBuffer: 200 * 1024 * 1024,
       cwd: workDir,
@@ -68,23 +87,42 @@ export class NucleiParser extends BaseScanner {
     }
   }
 
-  async parse(rawOutput: string, context: ScannerContext): Promise<NormalizedFinding[]> {
+  parse(rawOutput: string, context: ScannerContext): Promise<NormalizedFinding[]> {
     const findings: NormalizedFinding[] = [];
-    if (!rawOutput.trim()) return findings;
+    if (!rawOutput.trim()) {
+      return Promise.resolve(findings);
+    }
 
-    const lines = rawOutput.trim().split('\n').filter((l) => l.trim());
+    const lines = rawOutput
+      .trim()
+      .split('\n')
+      .filter((l) => l.trim());
 
     for (const line of lines) {
       try {
         const entry = JSON.parse(line) as NucleiResult;
         const finding = this.mapNucleiResult(entry, context.target);
-        if (finding) findings.push(finding);
+        if (finding) {
+          findings.push(finding);
+        }
       } catch {
         continue;
       }
     }
 
-    return findings;
+    return Promise.resolve(findings);
+  }
+
+  private isValidHttpUrl(value: string): boolean {
+    if (/\s/.test(value)) {
+      return false;
+    }
+    try {
+      const parsed = new URL(value);
+      return parsed.protocol === 'http:' || parsed.protocol === 'https:';
+    } catch {
+      return false;
+    }
   }
 
   private buildNucleiArgs(
@@ -99,11 +137,21 @@ export class NucleiParser extends BaseScanner {
 
     const tags = config['tags'] as string[] | undefined;
     if (tags && tags.length > 0) {
+      for (const tag of tags) {
+        if (!NUCLEI_TAG_REGEX.test(tag)) {
+          throw new Error(`Invalid Nuclei tag rejected: ${tag}`);
+        }
+      }
       args.push('-tags', tags.join(','));
     }
 
     const severity = config['severity'] as string[] | undefined;
     if (severity && severity.length > 0) {
+      for (const s of severity) {
+        if (!NUCLEI_SEVERITY_ALLOWLIST.has(s.toLowerCase())) {
+          throw new Error(`Invalid Nuclei severity rejected: ${s}`);
+        }
+      }
       args.push('-severity', severity.join(','));
     } else {
       args.push('-severity', 'critical,high,medium,low,info');
@@ -112,18 +160,30 @@ export class NucleiParser extends BaseScanner {
     const templates = config['templates'] as string[] | undefined;
     if (templates && templates.length > 0) {
       for (const t of templates) {
+        if (!NUCLEI_TEMPLATE_REGEX.test(t) || t.includes('..')) {
+          throw new Error(`Invalid Nuclei template path rejected: ${t}`);
+        }
         args.push('-t', t);
       }
     }
 
     const rateLimit = config['rateLimit'] as number | undefined;
-    if (rateLimit) {
+    if (rateLimit !== undefined) {
+      if (!Number.isInteger(rateLimit) || rateLimit <= 0 || rateLimit > 1_000_000) {
+        throw new Error(`Invalid rate limit rejected: ${String(rateLimit)}`);
+      }
       args.push('-rate-limit', String(rateLimit));
     } else {
       args.push('-rate-limit', '150');
     }
 
     const concurrency = config['parallelism'] as number | undefined;
+    if (
+      concurrency !== undefined &&
+      (!Number.isInteger(concurrency) || concurrency <= 0 || concurrency > 1000)
+    ) {
+      throw new Error(`Invalid parallelism rejected: ${String(concurrency)}`);
+    }
     args.push('-c', String(concurrency ?? 25));
 
     if (config['headless'] === true) {
@@ -133,26 +193,29 @@ export class NucleiParser extends BaseScanner {
     return args;
   }
 
-  private mapNucleiResult(
-    result: NucleiResult,
-    defaultTarget: string,
-  ): NormalizedFinding | null {
-    if (!result.info) return null;
+  private mapNucleiResult(result: NucleiResult, defaultTarget: string): NormalizedFinding | null {
+    if (!result.info) {
+      return null;
+    }
 
     const severity = this.mapSeverity(result.info.severity ?? 'info');
     const cveIds = this.extractCveIds(
       [result.info.name ?? '', ...(result.info.reference ?? [])].join(' '),
     );
 
+    // TEMPLATE_ID_KEY is a fixed internal constant, not attacker input
+    // eslint-disable-next-line security/detect-object-injection
+    const templateId = result[TEMPLATE_ID_KEY];
+
     return {
       scanner: 'NUCLEI',
-      pluginId: result.template ?? result['template-id'],
-      title: result.info.name ?? result['template-id'] ?? 'Unknown',
-      description: result.info.description ?? result['template-id'] ?? '',
+      pluginId: result.template ?? templateId,
+      title: result.info.name ?? templateId ?? 'Unknown',
+      description: result.info.description ?? templateId ?? '',
       severity,
       target: result.host ?? result.matched ?? defaultTarget,
       url: result.matched ?? undefined,
-      port: result.port ? parseInt(result.port, 10) : undefined,
+      port: result.port !== undefined && result.port !== '' ? parseInt(result.port, 10) : undefined,
       protocol: result.scheme,
       cveIds,
       cweIds: this.extractCweIds(result.info.name ?? ''),
@@ -165,7 +228,7 @@ export class NucleiParser extends BaseScanner {
       request: result.request,
       response: result.response,
       fingerprint: this.generateFingerprint({
-        templateId: result['template-id'],
+        templateId,
         host: result.host,
         matched: result.matched,
       }),
@@ -173,8 +236,11 @@ export class NucleiParser extends BaseScanner {
   }
 
   private extractCvssScore(info: NucleiInfo): number | undefined {
-    if (info.classification?.['cvss-score'] !== undefined) {
-      return parseFloat(String(info.classification['cvss-score']));
+    // CVSS_SCORE_KEY is a fixed internal constant, not attacker input
+    // eslint-disable-next-line security/detect-object-injection
+    const cvssScore = info.classification?.[CVSS_SCORE_KEY];
+    if (cvssScore !== undefined) {
+      return parseFloat(String(cvssScore));
     }
     return undefined;
   }

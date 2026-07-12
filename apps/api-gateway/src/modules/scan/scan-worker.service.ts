@@ -1,24 +1,16 @@
 import { Injectable, OnModuleInit } from '@nestjs/common';
-import { InjectPinoLogger, PinoLogger } from 'nestjs-pino';
 import { Cron, CronExpression } from '@nestjs/schedule';
 import { ScanStatus } from '@prisma/client';
 import type { VulnerabilityCategory } from '@prisma/client';
+import { QUEUES, NOTIFICATION_EVENTS } from '@sentinelx/shared';
+import { InjectPinoLogger, PinoLogger } from 'nestjs-pino';
+
 import { PrismaService } from '../database/prisma.service';
+import { NotificationService } from '../notification/notification.service';
 import { QueueService } from '../queue/queue.service';
 import { RedisService } from '../redis/redis.service';
-import { NotificationService } from '../notification/notification.service';
-import { ScanProgressGateway } from './scan-progress.gateway';
-import { QUEUES, EVENTS, NOTIFICATION_EVENTS } from '@sentinelx/shared';
-import type { ScanProgress } from '@sentinelx/shared';
 
-interface ScanJobMessage {
-  scanId: string;
-  organizationId: string;
-  scanType: string;
-  targets: string[];
-  configuration: Record<string, unknown>;
-  priority: number;
-}
+import { ScanProgressGateway } from './scan-progress.gateway';
 
 interface ScanResultMessage {
   scanId: string;
@@ -29,6 +21,8 @@ interface ScanResultMessage {
   success: boolean;
   errorMessage?: string;
   statistics: Record<string, unknown>;
+  /** True when `findings` came from the DEMO_MODE simulator, not a real scan. */
+  demoMode?: boolean;
 }
 
 @Injectable()
@@ -45,12 +39,9 @@ export class ScanWorkerService implements OnModuleInit {
 
   async onModuleInit(): Promise<void> {
     // Subscribe to scan result events from scanner workers
-    await this.queue.consume<ScanResultMessage>(
-      QUEUES.SCAN_RESULTS,
-      async (message) => {
-        await this.processScanResult(message.payload);
-      },
-    );
+    await this.queue.consume<ScanResultMessage>(QUEUES.SCAN_RESULTS, async (message) => {
+      await this.processScanResult(message.payload);
+    });
 
     this.logger.info('Scan worker service initialized — consuming scan results');
   }
@@ -96,7 +87,9 @@ export class ScanWorkerService implements OnModuleInit {
       where: { id: scanId },
       include: { targets: true },
     });
-    if (!scan) return;
+    if (!scan) {
+      return;
+    }
 
     let criticalCount = 0;
     let highCount = 0;
@@ -129,11 +122,17 @@ export class ScanWorkerService implements OnModuleInit {
     for (const finding of findings) {
       const severity = finding.severity as 'CRITICAL' | 'HIGH' | 'MEDIUM' | 'LOW' | 'INFORMATIONAL';
 
-      if (severity === 'CRITICAL') criticalCount++;
-      else if (severity === 'HIGH') highCount++;
-      else if (severity === 'MEDIUM') mediumCount++;
-      else if (severity === 'LOW') lowCount++;
-      else infoCount++;
+      if (severity === 'CRITICAL') {
+        criticalCount++;
+      } else if (severity === 'HIGH') {
+        highCount++;
+      } else if (severity === 'MEDIUM') {
+        mediumCount++;
+      } else if (severity === 'LOW') {
+        lowCount++;
+      } else {
+        infoCount++;
+      }
 
       // Check for duplicate vulnerability
       const existingVuln = await this.prisma.vulnerability.findFirst({
@@ -156,8 +155,14 @@ export class ScanWorkerService implements OnModuleInit {
       } else {
         // Create new vulnerability
         const slaDeadline = new Date();
-        const slaDays = { CRITICAL: 1, HIGH: 7, MEDIUM: 30, LOW: 90, INFORMATIONAL: 180 };
-        slaDeadline.setDate(slaDeadline.getDate() + (slaDays[severity] ?? 90));
+        const slaDays = new Map([
+          ['CRITICAL', 1],
+          ['HIGH', 7],
+          ['MEDIUM', 30],
+          ['LOW', 90],
+          ['INFORMATIONAL', 180],
+        ]);
+        slaDeadline.setDate(slaDeadline.getDate() + (slaDays.get(severity) ?? 90));
 
         const vuln = await this.prisma.vulnerability.create({
           data: {
@@ -177,11 +182,21 @@ export class ScanWorkerService implements OnModuleInit {
             proof: finding.evidence,
             request: finding.request,
             response: finding.response,
+            detectionMethod: result.demoMode === true ? 'SIMULATED_DEMO_DATA' : undefined,
             scanner: result.scanner,
             pluginId: finding.pluginId,
             fingerprint: finding.fingerprint,
             slaDeadline,
-            riskScore: finding.cvssV3Score ? finding.cvssV3Score * 10 : severity === 'CRITICAL' ? 90 : severity === 'HIGH' ? 70 : severity === 'MEDIUM' ? 50 : 20,
+            riskScore:
+              finding.cvssV3Score !== undefined
+                ? finding.cvssV3Score * 10
+                : severity === 'CRITICAL'
+                  ? 90
+                  : severity === 'HIGH'
+                    ? 70
+                    : severity === 'MEDIUM'
+                      ? 50
+                      : 20,
           },
         });
 
@@ -240,10 +255,12 @@ export class ScanWorkerService implements OnModuleInit {
     const scan = await this.prisma.scan.findUnique({
       where: { id: scanId },
       include: {
-        scannerJobs: { select: { status: true } },
+        scannerJobs: { select: { status: true, errorMessage: true } },
       },
     });
-    if (!scan) return;
+    if (!scan) {
+      return;
+    }
 
     const allJobs = scan.scannerJobs;
     const completedJobs = allJobs.filter((j) => j.status === 'COMPLETED' || j.status === 'FAILED');
@@ -252,12 +269,17 @@ export class ScanWorkerService implements OnModuleInit {
       return; // Still running
     }
 
-    const hasFailures = allJobs.some((j) => j.status === 'FAILED');
-    const status = hasFailures
-      ? completedJobs.length === allJobs.length
-        ? ScanStatus.PARTIAL
-        : ScanStatus.COMPLETED
-      : ScanStatus.COMPLETED;
+    const failedJobs = allJobs.filter((j) => j.status === 'FAILED');
+    const succeededJobs = allJobs.filter((j) => j.status === 'COMPLETED');
+
+    // Every job failed → the scan produced no real results and must be
+    // reported FAILED, never COMPLETED with zero (or fabricated) findings.
+    const status =
+      failedJobs.length === 0
+        ? ScanStatus.COMPLETED
+        : succeededJobs.length === 0
+          ? ScanStatus.FAILED
+          : ScanStatus.PARTIAL;
 
     const now = new Date();
     const durationSeconds = scan.startedAt
@@ -271,6 +293,12 @@ export class ScanWorkerService implements OnModuleInit {
         completedAt: now,
         progress: 100,
         durationSeconds,
+        ...(status === ScanStatus.FAILED
+          ? {
+              failedAt: now,
+              errorMessage: failedJobs[0]?.errorMessage ?? 'All scanner jobs failed',
+            }
+          : {}),
       },
     });
 
@@ -284,17 +312,19 @@ export class ScanWorkerService implements OnModuleInit {
 
     // Send notifications
     if (scan.criticalCount > 0) {
-      void this.notifications.sendNotification({
-        type: NOTIFICATION_EVENTS.SCAN_COMPLETED,
-        severity: 'CRITICAL',
-        organizationId,
-        title: 'Scan Completed — Critical Vulnerabilities Found',
-        message: `Scan "${scan.name}" completed with ${scan.criticalCount} critical vulnerabilities requiring immediate attention.`,
-        entityType: 'scan',
-        entityId: scanId,
-        actionUrl: `/scans/${scanId}`,
-        data: { criticalCount: scan.criticalCount, highCount: scan.highCount },
-      }).catch(() => undefined);
+      void this.notifications
+        .sendNotification({
+          type: NOTIFICATION_EVENTS.SCAN_COMPLETED,
+          severity: 'CRITICAL',
+          organizationId,
+          title: 'Scan Completed — Critical Vulnerabilities Found',
+          message: `Scan "${scan.name}" completed with ${scan.criticalCount} critical vulnerabilities requiring immediate attention.`,
+          entityType: 'scan',
+          entityId: scanId,
+          actionUrl: `/scans/${scanId}`,
+          data: { criticalCount: scan.criticalCount, highCount: scan.highCount },
+        })
+        .catch(() => undefined);
     }
 
     // Clear progress cache
@@ -321,27 +351,56 @@ export class ScanWorkerService implements OnModuleInit {
     title?: string;
     description?: string;
   }): VulnerabilityCategory {
-    const text = `${finding.title ?? ''} ${finding.description ?? ''} ${finding.cweIds?.join(' ') ?? ''}`.toLowerCase();
+    const text =
+      `${finding.title ?? ''} ${finding.description ?? ''} ${finding.cweIds?.join(' ') ?? ''}`.toLowerCase();
 
-    if (text.includes('injection') || text.includes('sql') || text.includes('ldap')) return 'INJECTION';
-    if (text.includes('xss') || text.includes('cross-site scripting')) return 'XSS';
-    if (text.includes('csrf') || text.includes('cross-site request')) return 'CSRF';
-    if (text.includes('ssrf') || text.includes('server-side request')) return 'SSRF';
-    if (text.includes('auth') || text.includes('session') || text.includes('credential')) return 'BROKEN_AUTH';
-    if (text.includes('crypto') || text.includes('cipher') || text.includes('ssl') || text.includes('tls')) return 'WEAK_CRYPTOGRAPHY';
-    if (text.includes('secret') || text.includes('api key') || text.includes('password')) return 'HARDCODED_SECRETS';
-    if (text.includes('misconfigur')) return 'MISCONFIGURATION';
-    if (text.includes('path traversal') || text.includes('directory traversal')) return 'PATH_TRAVERSAL';
-    if (text.includes('command') || text.includes('rce') || text.includes('exec')) return 'COMMAND_INJECTION';
-    if (text.includes('privilege')) return 'PRIVILEGE_ESCALATION';
-    if (text.includes('disclosure') || text.includes('information')) return 'INFORMATION_DISCLOSURE';
+    if (text.includes('injection') || text.includes('sql') || text.includes('ldap')) {
+      return 'INJECTION';
+    }
+    if (text.includes('xss') || text.includes('cross-site scripting')) {
+      return 'XSS';
+    }
+    if (text.includes('csrf') || text.includes('cross-site request')) {
+      return 'CSRF';
+    }
+    if (text.includes('ssrf') || text.includes('server-side request')) {
+      return 'SSRF';
+    }
+    if (text.includes('auth') || text.includes('session') || text.includes('credential')) {
+      return 'BROKEN_AUTH';
+    }
+    if (
+      text.includes('crypto') ||
+      text.includes('cipher') ||
+      text.includes('ssl') ||
+      text.includes('tls')
+    ) {
+      return 'WEAK_CRYPTOGRAPHY';
+    }
+    if (text.includes('secret') || text.includes('api key') || text.includes('password')) {
+      return 'HARDCODED_SECRETS';
+    }
+    if (text.includes('misconfigur')) {
+      return 'MISCONFIGURATION';
+    }
+    if (text.includes('path traversal') || text.includes('directory traversal')) {
+      return 'PATH_TRAVERSAL';
+    }
+    if (text.includes('command') || text.includes('rce') || text.includes('exec')) {
+      return 'COMMAND_INJECTION';
+    }
+    if (text.includes('privilege')) {
+      return 'PRIVILEGE_ESCALATION';
+    }
+    if (text.includes('disclosure') || text.includes('information')) {
+      return 'INFORMATION_DISCLOSURE';
+    }
 
     return 'MISCONFIGURATION';
   }
 
   @Cron(CronExpression.EVERY_5_MINUTES)
   async checkStuckScans(): Promise<void> {
-    const fiveMinutesAgo = new Date(Date.now() - 5 * 60 * 1000);
     const twentyFourHoursAgo = new Date(Date.now() - 24 * 60 * 60 * 1000);
 
     // Mark stuck scans as failed

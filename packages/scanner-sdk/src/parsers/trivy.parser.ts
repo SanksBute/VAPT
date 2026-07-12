@@ -1,10 +1,16 @@
-import type { NormalizedFinding } from '@sentinelx/shared';
-import { BaseScanner } from '../base/base-scanner';
-import type { ScannerContext, ScannerMetadata } from '../interfaces/scanner.interface';
-import { exec } from 'child_process';
+import { execFile } from 'child_process';
 import { promisify } from 'util';
 
-const execAsync = promisify(exec);
+import type { NormalizedFinding } from '@sentinelx/shared';
+
+import { BaseScanner } from '../base/base-scanner';
+import type { ScannerContext, ScannerMetadata } from '../interfaces/scanner.interface';
+
+const execFileAsync = promisify(execFile);
+
+const TRIVY_SEVERITY_ALLOWLIST = new Set(['critical', 'high', 'medium', 'low', 'unknown']);
+const TRIVY_SCAN_TYPE_ALLOWLIST = new Set(['image', 'fs', 'repo', 'k8s']);
+const SAFE_PATH_REGEX = /^[a-zA-Z0-9_\-./:@]+$/;
 
 export class TrivyParser extends BaseScanner {
   readonly metadata: ScannerMetadata = {
@@ -12,7 +18,12 @@ export class TrivyParser extends BaseScanner {
     version: '0.52.0',
     displayName: 'Trivy',
     description: 'Comprehensive vulnerability scanner for containers, filesystems, and cloud',
-    supportedScanTypes: ['CONTAINER_SECURITY', 'CODE_ANALYSIS', 'SECRET_DETECTION', 'KUBERNETES_SECURITY'],
+    supportedScanTypes: [
+      'CONTAINER_SECURITY',
+      'CODE_ANALYSIS',
+      'SECRET_DETECTION',
+      'KUBERNETES_SECURITY',
+    ],
     supportedTargetTypes: ['container_image', 'repository', 'file_path'],
     requiresCredentials: false,
     supportsParallel: true,
@@ -26,7 +37,7 @@ export class TrivyParser extends BaseScanner {
 
   async isAvailable(): Promise<boolean> {
     try {
-      await execAsync('trivy --version');
+      await execFileAsync('trivy', ['--version']);
       return true;
     } catch {
       return false;
@@ -35,7 +46,7 @@ export class TrivyParser extends BaseScanner {
 
   async getVersion(): Promise<string> {
     try {
-      const { stdout } = await execAsync('trivy --version');
+      const { stdout } = await execFileAsync('trivy', ['--version']);
       const match = /Version: (\S+)/.exec(stdout);
       return match?.[1] ?? 'unknown';
     } catch {
@@ -47,14 +58,25 @@ export class TrivyParser extends BaseScanner {
     const { target, configuration, workDir, timeout } = context;
     const outputFile = `${workDir}/trivy-${context.jobId}.json`;
 
-    const scanType = this.determineScanType(target, configuration as unknown as Record<string, unknown>);
-    const args = this.buildTrivyArgs(target, scanType, configuration as unknown as Record<string, unknown>, outputFile);
-    const command = `trivy ${args.join(' ')}`;
+    if (!SAFE_PATH_REGEX.test(target)) {
+      throw new Error(`Invalid Trivy target rejected: ${target}`);
+    }
 
-    await context.onEvent('scan_started', `Starting Trivy scan on ${target}`);
+    const scanType = this.determineScanType(
+      target,
+      configuration as unknown as Record<string, unknown>,
+    );
+    const args = this.buildTrivyArgs(
+      target,
+      scanType,
+      configuration as unknown as Record<string, unknown>,
+      outputFile,
+    );
+
+    await context.onEvent('scan_started', `Starting Trivy scan on ${target}`, { args });
     await context.onProgress(5, 'Downloading Trivy database');
 
-    await execAsync(command, {
+    await execFileAsync('trivy', args, {
       timeout: timeout * 1000,
       maxBuffer: 500 * 1024 * 1024,
       cwd: workDir,
@@ -68,26 +90,29 @@ export class TrivyParser extends BaseScanner {
     }
   }
 
-  async parse(rawOutput: string, context: ScannerContext): Promise<NormalizedFinding[]> {
+  parse(rawOutput: string, context: ScannerContext): Promise<NormalizedFinding[]> {
     const findings: NormalizedFinding[] = [];
-    if (!rawOutput.trim()) return findings;
+    if (!rawOutput.trim()) {
+      return Promise.resolve(findings);
+    }
 
     let report: TrivyReport;
     try {
       report = JSON.parse(rawOutput) as TrivyReport;
     } catch {
-      return findings;
+      return Promise.resolve(findings);
     }
 
-    const results = Array.isArray(report.Results) ? report.Results : report.Results ? [report.Results] : [];
+    const results = Array.isArray(report.Results) ? report.Results : [];
 
     for (const result of results) {
       // Vulnerabilities
       for (const vuln of result.Vulnerabilities ?? []) {
         const cvssScore = this.extractCvssScore(vuln);
-        const severity = cvssScore !== undefined
-          ? this.cvssScoreToSeverity(cvssScore)
-          : this.mapSeverity(vuln.Severity ?? 'info');
+        const severity =
+          cvssScore !== undefined
+            ? this.cvssScoreToSeverity(cvssScore)
+            : this.mapSeverity(vuln.Severity ?? 'info');
 
         findings.push({
           scanner: 'TRIVY',
@@ -98,11 +123,17 @@ export class TrivyParser extends BaseScanner {
           target: context.target,
           affectedComponent: `${vuln.PkgName}@${vuln.InstalledVersion}`,
           fixedVersion: vuln.FixedVersion,
-          cveIds: vuln.VulnerabilityID ? [vuln.VulnerabilityID] : [],
+          cveIds:
+            vuln.VulnerabilityID !== undefined && vuln.VulnerabilityID !== ''
+              ? [vuln.VulnerabilityID]
+              : [],
           cweIds: [],
           cvssV3Score: cvssScore,
           cvssV3Vector: vuln.CVSS?.nvd?.V3Vector ?? vuln.CVSS?.redhat?.V3Vector,
-          solution: vuln.FixedVersion ? `Update to version ${vuln.FixedVersion}` : undefined,
+          solution:
+            vuln.FixedVersion !== undefined && vuln.FixedVersion !== ''
+              ? `Update to version ${vuln.FixedVersion}`
+              : undefined,
           references: vuln.References ?? [],
           fingerprint: this.generateFingerprint({
             vulnId: vuln.VulnerabilityID,
@@ -157,7 +188,7 @@ export class TrivyParser extends BaseScanner {
       }
     }
 
-    return findings;
+    return Promise.resolve(findings);
   }
 
   private buildTrivyArgs(
@@ -170,11 +201,24 @@ export class TrivyParser extends BaseScanner {
 
     const severity = config['severity'] as string[] | undefined;
     if (severity && severity.length > 0) {
+      for (const s of severity) {
+        if (!TRIVY_SEVERITY_ALLOWLIST.has(s.toLowerCase())) {
+          throw new Error(`Invalid Trivy severity rejected: ${s}`);
+        }
+      }
       args.push('--severity', severity.join(',').toUpperCase());
     }
 
-    if (config['ignoredVulns']) {
-      args.push('--ignorefile', String(config['ignoredVulns']));
+    if (
+      config['ignoredVulns'] !== undefined &&
+      config['ignoredVulns'] !== null &&
+      config['ignoredVulns'] !== ''
+    ) {
+      const ignoreFile = String(config['ignoredVulns']);
+      if (!SAFE_PATH_REGEX.test(ignoreFile) || ignoreFile.includes('..')) {
+        throw new Error(`Invalid Trivy ignore file path rejected: ${ignoreFile}`);
+      }
+      args.push('--ignorefile', ignoreFile);
     }
 
     if (config['offline'] === true) {
@@ -195,7 +239,12 @@ export class TrivyParser extends BaseScanner {
 
   private determineScanType(target: string, config: Record<string, unknown>): string {
     const explicitType = config['trivyScanType'] as string | undefined;
-    if (explicitType) return explicitType;
+    if (explicitType !== undefined && explicitType !== '') {
+      if (!TRIVY_SCAN_TYPE_ALLOWLIST.has(explicitType)) {
+        throw new Error(`Invalid Trivy scan type rejected: ${explicitType}`);
+      }
+      return explicitType;
+    }
 
     if (target.includes('/') && !target.startsWith('http')) {
       return 'fs';
@@ -209,8 +258,12 @@ export class TrivyParser extends BaseScanner {
   }
 
   private extractCvssScore(vuln: TrivyVulnerability): number | undefined {
-    if (vuln.CVSS?.nvd?.V3Score !== undefined) return vuln.CVSS.nvd.V3Score;
-    if (vuln.CVSS?.redhat?.V3Score !== undefined) return vuln.CVSS.redhat.V3Score;
+    if (vuln.CVSS?.nvd?.V3Score !== undefined) {
+      return vuln.CVSS.nvd.V3Score;
+    }
+    if (vuln.CVSS?.redhat?.V3Score !== undefined) {
+      return vuln.CVSS.redhat.V3Score;
+    }
     return undefined;
   }
 }
