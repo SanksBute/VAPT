@@ -1,8 +1,10 @@
 # SentinelX AI
 
-> **Enterprise AI-Powered Offensive Security Platform**
+> **Self-hosted vulnerability-scanning orchestration platform**
 
-SentinelX AI is a production-grade, multi-tenant cybersecurity SaaS platform that competes with industry leaders like Qualys, Rapid7 InsightVM, Tenable, Invicti, Acunetix, Microsoft Defender Vulnerability Management, and Burp Suite Enterprise.
+SentinelX AI is a self-hosted, multi-tenant platform that orchestrates open-source security scanners (Nmap, Nuclei, OWASP ZAP, Trivy, Semgrep) behind a single API, queue, and reporting layer. It normalizes their output into a common vulnerability model, tracks findings and SLAs per organization, and layers AI-assisted triage on top. It is scanner-wrapping orchestration — not a from-scratch scan engine — and only the scanners listed under [Implemented Scanners](#implemented-scanners) actually run today.
+
+> ⚠️ **Authorization & scope.** Scans only run against assets your organization owns and has recorded as ACTIVE in its inventory (see [Authorization & scope](#authorization--scope)). Only scan systems you own or are explicitly authorized to test — unauthorized scanning is illegal in most jurisdictions.
 
 ---
 
@@ -34,9 +36,9 @@ sentinelx/
 |--------|-------------|
 | **Asset Discovery** | Network scanning, cloud discovery, automatic asset fingerprinting |
 | **Vulnerability Assessment** | CVSS scoring, SLA tracking, risk prioritization |
-| **Web Application Security** | DAST scanning with ZAP, Nikto, custom crawlers |
+| **Web Application Security** | DAST scanning with OWASP ZAP |
 | **API Security** | REST/GraphQL API vulnerability testing |
-| **Cloud Security** | AWS/Azure/GCP misconfiguration assessment (ScoutSuite, Prowler) |
+| **Cloud Security** | AWS/Azure/GCP misconfiguration assessment (ScoutSuite, Prowler) — *planned, not yet implemented* |
 | **Container Security** | Docker/OCI image scanning with Trivy |
 | **Kubernetes Security** | K8s cluster hardening assessment |
 | **Source Code Analysis** | SAST with Semgrep + custom rules |
@@ -168,26 +170,49 @@ pnpm dev:web    # Next.js frontend on :3000
 - Email: `admin@sentinelx.io`
 - Password: `SentinelX@Admin2024!` ⚠️ Change immediately!
 
-## Supported Scanners
+## Scanners
+
+### Implemented Scanners
+
+These are the only scanners wired into the scan executor (`scanners` map in `apps/api-gateway/src/modules/scan/scan-executor.service.ts`). They are the scanners that actually run:
 
 | Scanner | Type | Coverage |
 |---------|------|----------|
 | **Nmap** | Network | Port scanning, OS detection, NSE scripts |
+| **Nuclei** | Multi | Template-based vulnerability detection |
+| **OWASP ZAP** | Web App | DAST, spider, active scan |
+| **Trivy** | Container | Container/IaC vulnerability scanning |
+| **Semgrep** | SAST | Static code analysis |
+
+### Planned / not yet implemented
+
+These scanners are referenced in the data model and roadmap but are **not** wired into the executor. Requesting one of them as a scanner outside `DEMO_MODE` will fail the scan (no executor is registered for it):
+
+| Scanner | Type | Coverage |
+|---------|------|----------|
 | **Masscan** | Network | High-speed port scanning |
 | **Rustscan** | Network | Fast port discovery |
 | **OpenVAS** | Vulnerability | CVE-based vulnerability assessment |
-| **OWASP ZAP** | Web App | DAST, spider, active scan |
 | **Nikto** | Web App | Web server misconfiguration |
 | **SQLMap** | Injection | SQL injection detection |
-| **Nuclei** | Multi | Template-based vulnerability detection (9000+ templates) |
-| **Trivy** | Container | Container/IaC vulnerability scanning |
 | **ScoutSuite** | Cloud | AWS/Azure/GCP security assessment |
 | **Prowler** | Cloud | CIS benchmark compliance |
-| **Semgrep** | SAST | Static code analysis (100+ languages) |
 | **MobSF** | Mobile | Android/iOS application security |
 | **Lynis** | OS | Unix/Linux system hardening |
 | **OSQuery** | Endpoint | Endpoint security monitoring |
 | **Falco** | Runtime | Kubernetes runtime security |
+
+## Authorization & scope
+
+SentinelX will not scan arbitrary hosts. Before any scanner job is dispatched, every requested target is checked against the requesting organization's asset inventory:
+
+- A target is accepted only if it matches an **ACTIVE**, non-deleted `Asset` owned by the organization (by hostname/FQDN, IP address, or repository URL).
+- If any target has no owning asset, the **entire scan is rejected** with a `403 Forbidden` naming the out-of-scope target(s) — nothing is partially run.
+- CIDR ranges are not currently scope-verifiable (the asset model records no owned ranges) and are rejected; scan the individual owned hosts instead.
+
+> Ownership is currently inferred from `AssetStatus = ACTIVE`. Explicit domain-ownership verification (DNS TXT / file token) is planned.
+>
+> **Legal caveat:** Only scan systems you own or are explicitly authorized to test. Unauthorized scanning is illegal in most jurisdictions and is the user's responsibility.
 
 ## Compliance Frameworks
 
@@ -288,7 +313,3 @@ SentinelX AI is built with security-first principles:
 ## License
 
 Proprietary — SentinelX AI © 2024. All rights reserved.
-
----
-
-Built to compete with enterprise security platforms. Never demo code.

@@ -40,6 +40,11 @@ export class ScanService {
   ) {}
 
   async createScan(dto: CreateScanDto, user: AuthContext): Promise<Scan> {
+    // Enforce target-scope authorization BEFORE anything is created or dispatched.
+    // The platform shells out to real scanners (Nmap/ZAP/etc.), so every target must be
+    // proven to belong to the requesting organization or the whole scan is rejected.
+    await this.assertTargetsInScope(dto.targets, user.organizationId);
+
     // Check scan limits
     await this.checkScanLimits(user.organizationId);
 
@@ -461,6 +466,114 @@ export class ScanService {
       throw new ForbiddenException(
         `Monthly scan limit (${org.maxScansPerMonth}) reached. Upgrade your plan for more scans.`,
       );
+    }
+  }
+
+  /**
+   * Rejects the whole scan unless every requested target is an ACTIVE, non-deleted asset
+   * owned by the requesting organization. Runs after DTO-level format validation
+   * (`isValidScanTarget`) and before any scan row or scanner job is created.
+   *
+   * Unauthorized scanning is a legal/abuse problem, so this deliberately fails closed:
+   * if a single target is out of scope, none of them run.
+   */
+  private async assertTargetsInScope(targets: string[], orgId: string): Promise<void> {
+    const rejected: string[] = [];
+
+    for (const target of targets) {
+      const type = this.detectTargetType(target);
+
+      // The Asset model has no field recording owned network ranges, so we cannot prove
+      // ownership of a CIDR block. Reject rather than guess (do not scan a whole range
+      // on the strength of owning one host inside it).
+      if (type === 'cidr') {
+        rejected.push(`${target} (CIDR ranges cannot be scope-verified — scan individual owned hosts instead)`);
+        continue;
+      }
+
+      const owningAsset = await this.findOwningAsset(target, type, orgId);
+      if (owningAsset === null) {
+        rejected.push(target);
+      }
+    }
+
+    if (rejected.length > 0) {
+      throw new ForbiddenException(
+        'The following target(s) are not authorized for scanning by your organization: ' +
+          `${rejected.join(', ')}. ` +
+          'Each target must exist as an ACTIVE asset in your organization inventory before it can be scanned. ' +
+          'Only scan systems you own or are explicitly authorized to test.',
+      );
+    }
+  }
+
+  /**
+   * Finds the ACTIVE, non-deleted asset in the given org that owns `target`, or null.
+   * Matching is by target type:
+   *  - ip       → an asset whose `ipAddresses` contains the exact IP
+   *  - hostname → an asset whose `hostname`/`fqdn`/`repositoryUrl` equals it (case-insensitive)
+   *  - url      → an asset whose `repositoryUrl` equals it, or whose `hostname`/`fqdn`
+   *               equals the URL host (case-insensitive)
+   *  - cidr/unknown → not ownable in the current model (returns null)
+   */
+  private async findOwningAsset(
+    target: string,
+    type: string,
+    orgId: string,
+  ): Promise<{ id: string } | null> {
+    let match: Prisma.AssetWhereInput | null = null;
+
+    switch (type) {
+      case 'ip':
+        match = { ipAddresses: { has: target } };
+        break;
+      case 'hostname':
+        match = {
+          OR: [
+            { hostname: { equals: target, mode: 'insensitive' } },
+            { fqdn: { equals: target, mode: 'insensitive' } },
+            { repositoryUrl: { equals: target, mode: 'insensitive' } },
+          ],
+        };
+        break;
+      case 'url': {
+        const host = this.extractHost(target);
+        const hostMatchers: Prisma.AssetWhereInput[] =
+          host === null
+            ? []
+            : [
+                { hostname: { equals: host, mode: 'insensitive' } },
+                { fqdn: { equals: host, mode: 'insensitive' } },
+              ];
+        match = {
+          OR: [{ repositoryUrl: { equals: target, mode: 'insensitive' } }, ...hostMatchers],
+        };
+        break;
+      }
+      default:
+        return null;
+    }
+
+    return this.prisma.asset.findFirst({
+      where: {
+        organizationId: orgId,
+        deletedAt: null,
+        // TODO: introduce explicit domain-ownership verification (DNS TXT / file token).
+        // AssetStatus currently has no VERIFIED state, so ACTIVE is treated as the
+        // ownership signal — see Workstream 5.
+        status: 'ACTIVE',
+        ...match,
+      },
+      select: { id: true },
+    });
+  }
+
+  private extractHost(target: string): string | null {
+    try {
+      const host = new URL(target).hostname;
+      return host.length > 0 ? host : null;
+    } catch {
+      return null;
     }
   }
 
